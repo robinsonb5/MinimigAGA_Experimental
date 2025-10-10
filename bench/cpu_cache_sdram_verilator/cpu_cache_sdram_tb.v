@@ -15,6 +15,8 @@ module cpu_cache_sdram_tb(
   input  wire           cpuLongWord,
   input  wire [ 16-1:0] cpuWR,
   output wire [ 16-1:0] cpuRD,
+  input  wire           newpc,
+  input  wire [3:0]     cache_ctrl,
   output wire           clkena
 );
 
@@ -26,19 +28,19 @@ parameter addr_prefix = 1'b0;
 reg [3:0] slower;
 wire      ramsel = cpuState != 2'b01;
 wire      cpu_ncs = ~ramsel | slower[0];
+wire      addriok;
 
 always @(posedge clk_114) begin
+	slower <= {1'b0, slower[3:1]};
 	if (clkena)
 		slower <= 4'b0111;
-	else
-		slower <= {1'b0, slower[3:1]};
 end
 
 assign    clkena = !slower[0] && (cpuState == 2'b01 || tg68_cpuena);
-assign    tg68_cpustate = {cpuLongWord, cpu_ncs, cpuState};
+assign    tg68_cpustate = {cpuLongWord, cpu_ncs, cpuState}; // {addriok,newpc,cpuLongWord, cpu_ncs, cpuState};
 assign    tg68_dat_out = cpuWR;
 assign    cpuRD = tg68_dat_in;
-assign    tg68_cad[addr_max_bits+addr_prefix_bits-1:1] = cpuAddr;
+assign    tg68_cad[addr_max_bits+addr_prefix_bits-1:0] = {cpuAddr,1'b0};
 assign    tg68_clds = cpuL;
 assign    tg68_cuds = cpuU;
 
@@ -119,6 +121,7 @@ wire          _ram_we;
 reg           _ram_oe;
 wire [16-1:0] ramdata_in;
 
+reg  [32-1:0] tg68_cad_i=0;
 reg  [32-1:0] tg68_cad=0;
 reg  [ 4-1:0] tg68_cpustate=4'b0001;
 reg           tg68_clds=1;
@@ -139,6 +142,23 @@ reg           tg68_as=0;
 reg           tg68_uds=0;
 reg           tg68_lds=0;
 reg           tg68_rw=0;
+
+
+// Branch target buffer
+
+wire btb_ready;
+
+branch_target_buffer #(.enable(1)) btb (
+	.clk(clk_114),
+	.reset_n(reset),
+    .cpu_adr(tg68_cad[26:0]),        // cpu address
+	.cpu_state(cpuState),
+	.cpu_newpc(newpc),
+	.cpu_ack(clkena),
+	.adr_out(tg68_cad_i[26:0]),
+	.adr_out_stb(addriok),
+	.ready(btb_ready)
+);
 
 
 //// toplevel logic ////
@@ -166,6 +186,8 @@ always @(posedge clk_114) begin
 		_ram_oe <= 1'b0;
 		ram_address<=ram_address+1;
 	end
+	if(!reset)
+		ram_address<=21'h55000;
 end
 
 
@@ -187,12 +209,12 @@ sdram_ctrl #(
   .sysclk       (clk_114          ),
   .clk7_en      (clk_7_en         ),
   .clk28_en     (tg68_ena28       ),
-  .reset_in     (reset            ),
+  .reset_in     (reset & btb_ready),
   .cache_rst    (reset            ),
   .reset_out    (reset_out        ),
   .cache_inhibit(cache_inhibit    ),
   .cacheline_clr(1'b0             ),
-  .cpu_cache_ctrl(4'b0011         ),
+  .cpu_cache_ctrl(cache_ctrl      ),
   // sdram
   .sdaddr       (DRAM_ADDR        ),
   .sd_cs        (sdram_cs         ),
@@ -236,6 +258,7 @@ sdram_ctrl #(
   .audRd        (audRd            ),
   .audack       (audack           ),
   // cpu
+//  .cpuAddr_i    (tg68_cad_i[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),
@@ -268,13 +291,14 @@ sdram (
 // 2nd SDRAM controller
 sdram_ctrl #(
 	.addr_prefix_bits(addr_prefix_bits),
-	.addr_prefix(addr_prefix+1)
+	.addr_prefix(addr_prefix+1),
+	.shortcut(1'b1)
 ) sdram_ctrl2 (
   // sys
   .sysclk       (clk_114          ),
   .clk7_en      (clk_7_en         ),
   .clk28_en     (tg68_ena28       ),
-  .reset_in     (reset            ),
+  .reset_in     (reset & btb_ready),
   .cache_rst    (reset            ),
   .reset_out    (        ),
   .cache_inhibit(cache_inhibit    ),
@@ -323,6 +347,7 @@ sdram_ctrl #(
   .audRd        (       ),
   .audack       (       ),
   // cpu
+  .cpuAddr_i    (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),
