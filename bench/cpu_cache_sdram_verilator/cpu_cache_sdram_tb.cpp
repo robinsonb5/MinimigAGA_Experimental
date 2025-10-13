@@ -129,6 +129,7 @@ char basic_test() {
 	}
 	for (int i=0; i<17;i++) {
 		cpuWrite(i*2,i);
+		cpuRead(0x2220+i,0);
 		ok&=cpuVerify(i*2,1,"",i);
 	}
 	return ok;

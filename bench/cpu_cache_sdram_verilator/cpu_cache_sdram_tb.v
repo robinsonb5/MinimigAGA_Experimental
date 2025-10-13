@@ -201,7 +201,7 @@ assign clk_7_en = &clk7cnt[3:2];
 //// modules ////
 
 // SDRAM controller
-sdram_ctrl #(
+sdram_ctrl_splitcache #(
 	.addr_prefix_bits(addr_prefix_bits),
 	.addr_prefix(addr_prefix)
 ) sdram_ctrl (
@@ -289,7 +289,7 @@ sdram (
 
 `ifdef DUAL_SDRAM
 // 2nd SDRAM controller
-sdram_ctrl #(
+sdram_ctrl_splitcache #(
 	.addr_prefix_bits(addr_prefix_bits),
 	.addr_prefix(addr_prefix+1),
 	.shortcut(1'b1)
@@ -347,7 +347,7 @@ sdram_ctrl #(
   .audRd        (       ),
   .audack       (       ),
   // cpu
-  .cpuAddr_i    (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
+//  .cpuAddr_i    (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),

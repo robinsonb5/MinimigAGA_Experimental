@@ -518,7 +518,7 @@ wire           hostack;
 wire           hostce;
 
 //sdram sdram (
-sdram_ctrl sdram (
+sdram_ctrl_splitcache sdram (
   .cache_rst    (tg68_rst         ),
   .cache_inhibit(cache_inhibit    ),
   .cacheline_clr(cacheline_clr    ),
