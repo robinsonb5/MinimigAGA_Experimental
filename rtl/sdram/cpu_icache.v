@@ -108,8 +108,6 @@ wire [14-1:0] cpu_adr_tag;
 wire [14-1:0] cpu_adr_tag_l;
 
 // cache line cache - data
-reg   [8-1:0] cpu_cacheline_d_lo[0:7];
-reg   [8-1:0] cpu_cacheline_d_hi[0:7];
 reg  [26-1:4] cpu_cacheline_d_adr;
 wire          cpu_cacheline_d_valid;
 reg           cpu_cacheline_d_dirty;
@@ -225,11 +223,7 @@ assign cpu_adr_tag_l = cpu_adr_l[25:12];  // tag, 14 bits
 reg cpu_cacheline_ready;
 reg cpu_cacheline_d_ready;
 
-always @(posedge clk) cpu_cacheline_d_match <= addr_prefix_match && cpu_adr[25:4] == cpu_cacheline_d_adr && !cpu_cacheline_d_dirty;
-always @(posedge clk) cpu_cacheline_d_ready <= addr_prefix_match && cpu_rd && cpu_adr[25:4] == cpu_cacheline_d_adr && !cpu_cacheline_d_dirty && !cache_inhibit;
-assign cpu_cacheline_d_valid = cpu_cacheline_d_ready&& cpu_cacheline_ready;
-
-assign cpu_ack = cpu_cache_ack || cpu_cacheline_d_valid;
+assign cpu_ack = cpu_cache_ack;
 
 
 // cpu side state machine
@@ -253,8 +247,6 @@ always @ (posedge clk) begin
     cpu_sm_dram1_we   <= #1 1'b0;
     cpu_sm_bs         <= #1 4'b1111;
     cpu_cacheline_ready <= 1'b0;
-
-    cpu_dat_r <= {cpu_cacheline_d_hi[cpu_adr_blk], cpu_cacheline_d_lo[cpu_adr_blk]};
 
     if (cacheline_clr) cpu_cacheline_d_dirty <= #1 1'b1;
 
@@ -280,8 +272,6 @@ always @ (posedge clk) begin
         if (cpu_cs && addr_prefix_match) begin
           if (cpu_we) begin
             if (cache_inhibit) cpu_cacheline_d_dirty <= #1 1'b1; //invalidate
-            if (cpu_cacheline_d_match && cpu_bs[0]) cpu_cacheline_d_lo[cpu_adr_blk] <= #1 cpu_dat_w[ 7: 0]; //update low byte
-            if (cpu_cacheline_d_match && cpu_bs[1]) cpu_cacheline_d_hi[cpu_adr_blk] <= #1 cpu_dat_w[15: 8]; //update hi byte
 
             cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk_ptr};
 
@@ -295,7 +285,7 @@ always @ (posedge clk) begin
               cpu_dat_l <= cpu_dat_w;
               cpu_bs_l <= cpu_bs;
             end
-          end else if (cpu_rd && !cpu_cacheline_d_valid) begin
+          end else if (cpu_rd) begin
             cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk_ptr_next};
             cpu_adr_blk_ptr <= #1 cpu_adr_blk_ptr_next;
             cpu_sm_state <= #1 CPU_SM_READ;
@@ -319,9 +309,6 @@ always @ (posedge clk) begin
           cpu_adr_blk_ptr <= #1 cpu_adr_blk;
           sdr_dqm_w[3:2] <= #1 ~cpu_bs;
           sdr_dat_w[31:16] <= #1 cpu_dat_w;
-
-          if (cpu_cacheline_d_match && cpu_bs[0]) cpu_cacheline_d_lo[cpu_adr_blk] <= #1 cpu_dat_w[ 7: 0]; //update low byte
-          if (cpu_cacheline_d_match && cpu_bs[1]) cpu_cacheline_d_hi[cpu_adr_blk] <= #1 cpu_dat_w[15: 8]; //update hi byte
 
           // on hit update cache, on miss no update neccessary; tags don't get updated on writes
           if (!cpu_adr_blk[0]) begin
@@ -363,34 +350,20 @@ always @ (posedge clk) begin
           cpu_cacheline_d_adr <= #1 cpu_adr[25:4];
           cpu_cacheline_d_dirty <= #1 1'b0;
           cpu_cache_ack <= #1 1'b1; //early ack
+		  cpu_sm_state <= #1 CPU_SM_WAIT;
         end
-
-        cpu_sm_adr[2:1] <= cpu_sm_adr[2:1] + 1'b1;
-
-        cpu_adr_blk_ptr <= cpu_adr_blk_ptr_next;
-        // on hit update LRU flag in tag memory
 
         if (cc_en && dtag0_match && dtag0_valid) begin
           // data is already in data cache way 0
           cpu_sm_dtag_we <= #1 (cpu_cacheline_cnt == 2'b00); // update at the first cycle only
           cpu_sm_tag_dat_w <= #1 {1'b0, dtram_cpu_dat_r[30:0]};
-          cpu_cacheline_d_lo[{cpu_adr_blk_ptr_prev[2:1], 1'b0}] <= #1 ddram0_cpu_dat_r[ 7: 0];
-          cpu_cacheline_d_hi[{cpu_adr_blk_ptr_prev[2:1], 1'b0}] <= #1 ddram0_cpu_dat_r[15: 8];
-          cpu_cacheline_d_lo[{cpu_adr_blk_ptr_prev[2:1], 1'b1}] <= #1 ddram0_cpu_dat_r[23:16];
-          cpu_cacheline_d_hi[{cpu_adr_blk_ptr_prev[2:1], 1'b1}] <= #1 ddram0_cpu_dat_r[31:24];
-          if(cpu_cacheline_cnt == 2'b00)
-              cpu_dat_r <= cpu_adr_blk[0] ? ddram0_cpu_dat_r[31:16] : ddram0_cpu_dat_r[15:0];
+          cpu_dat_r <= cpu_adr_blk[0] ? ddram0_cpu_dat_r[31:16] : ddram0_cpu_dat_r[15:0];
 
         end else if (cc_en && dtag1_match && dtag1_valid) begin
           // data is already in data cache way 1
           cpu_sm_dtag_we <= #1 (cpu_cacheline_cnt == 2'b00); // update at the first cycle only
           cpu_sm_tag_dat_w <= #1 {1'b1, dtram_cpu_dat_r[30:0]};
-          cpu_cacheline_d_lo[{cpu_adr_blk_ptr_prev[2:1], 1'b0}] <= #1 ddram1_cpu_dat_r[ 7: 0];
-          cpu_cacheline_d_hi[{cpu_adr_blk_ptr_prev[2:1], 1'b0}] <= #1 ddram1_cpu_dat_r[15: 8];
-          cpu_cacheline_d_lo[{cpu_adr_blk_ptr_prev[2:1], 1'b1}] <= #1 ddram1_cpu_dat_r[23:16];
-          cpu_cacheline_d_hi[{cpu_adr_blk_ptr_prev[2:1], 1'b1}] <= #1 ddram1_cpu_dat_r[31:24];
-          if(cpu_cacheline_cnt == 2'b00)
-              cpu_dat_r <= cpu_adr_blk[0] ? ddram1_cpu_dat_r[31:16] : ddram1_cpu_dat_r[15:0];
+          cpu_dat_r <= cpu_adr_blk[0] ? ddram1_cpu_dat_r[31:16] : ddram1_cpu_dat_r[15:0];
 
         end else begin
           // on miss fetch data from SDRAM
@@ -406,17 +379,6 @@ always @ (posedge clk) begin
             cpu_sm_state <= #1 CPU_SM_SDWAI;
           end
         end
-
-        if(cpu_cacheline_cnt == 2'b11) begin
-            cpu_adr_blk_ptr <= #1 cpu_adr_blk;
-            if(cpu_cs)
-                cpu_sm_state<= CPU_SM_WAIT;
-            else begin
-                cpu_cacheline_ready <= 1'b1;
-                cpu_sm_state <= CPU_SM_IDLE;
-            end
-        end
-
       end
 
       CPU_SM_WAIT : begin
@@ -437,8 +399,6 @@ always @ (posedge clk) begin
           sdr_read_req <= #1 1'b0;
           // read data to cpu
           cpu_cache_ack <= #1 1'b1;
-          cpu_cacheline_d_lo[cpu_adr[3:1]] <= #1 sdr_dat_r[7:0];
-          cpu_cacheline_d_hi[cpu_adr[3:1]] <= #1 sdr_dat_r[15:8];
           cpu_dat_r <= sdr_dat_r;
           if (cache_inhibit) begin
             // don't update cache if caching is inhibited
@@ -470,10 +430,6 @@ always @ (posedge clk) begin
       if (sdr_read_ack) begin
           if (!cpu_cs)
             cpu_acked <= #1 1'b1;
-
-          // cache line fill 2nd...8th word
-          cpu_cacheline_d_lo[cpu_sm_adr_next[2:0]] <= #1 sdr_dat_r[7:0];
-          cpu_cacheline_d_hi[cpu_sm_adr_next[2:0]] <= #1 sdr_dat_r[15:8];
 
           cpu_sm_adr[2:0] <= #1 cpu_sm_adr_next[2:0];
           cpu_sm_bs <= #1 ~cpu_sm_bs;

@@ -263,12 +263,13 @@ assign hostena=slot1_type==HOST ? cache_fill_1 : 1'b0;
 ////////////////////////////////////////
 
 reg [31:0] cache_snoop_dat_w;
-reg [3:0] cache_snoop_bs;
+wire [3:0] cache_snoop_bs;
 wire [26-1:0] snoop_addr;
 reg snoop_act;
 reg snoop_slot;
 
 assign snoop_addr = snoop_slot ? slot2_addr : slot1_addr;
+assign cache_snoop_bs = snoop_slot ? ~{slot2_dqm2,slot2_dqm} : ~{slot1_dqm2,slot1_dqm}; // Byte selects
 
 wire [15:0] cpu_rd_d;
 wire [15:0] cpu_rd_i;
@@ -674,7 +675,7 @@ always @ (posedge sysclk) begin
 				slot1_write         <= #1 !chipRW;
 
 				cache_snoop_dat_w <={chipWR2, chipWR}; // snoop write data
-				cache_snoop_bs <= {!chipU2, !chipL2, !chipU, !chipL}; // Byte selects
+//				cache_snoop_bs <= {!chipU2, !chipL2, !chipU, !chipL}; // Byte selects
 			end
 			else begin
 				ba <= slot1_bank;
@@ -702,7 +703,7 @@ always @ (posedge sysclk) begin
 		end
 
 		ph2 : begin
-			cache_snoop_bs <= ~{slot1_dqm2,slot1_dqm}; // Byte selects
+//			cache_snoop_bs <= ~{slot1_dqm2,slot1_dqm}; // Byte selects
 			if(slot2_write) begin // Write cycle (2nd word)
 				sdata_oe            <= #1 1'b1;
 				ba                  <= #1 slot2_bank;
@@ -779,7 +780,7 @@ always @ (posedge sysclk) begin
 					default :        sdata_next <= #1 hostWR[15:0];
 				endcase
 			end
-	end
+		end
 
 		ph5 : begin
 			cache_fill_2                <= #1 1'b1;
@@ -897,7 +898,7 @@ always @ (posedge sysclk) begin
 		end
 
 		ph10 : begin
-			cache_snoop_bs <= ~{slot2_dqm2,slot2_dqm}; // Byte selects
+//			cache_snoop_bs <= ~{slot2_dqm2,slot2_dqm}; // Byte selects
 			if(slot1_write) begin // Write cycle (2nd word)
 				ba              <= #1 slot1_bank;
 				sdata_oe            <= #1 1'b1;
