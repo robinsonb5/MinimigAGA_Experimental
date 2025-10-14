@@ -200,6 +200,11 @@ assign clk_7_en = &clk7cnt[3:2];
 
 //// modules ////
 
+wire sdram_oe;
+wire [15:0] sdram_out;
+
+assign DRAM_DQ = sdram_oe ? sdram_out : 16'bzzzzzzzzzzzzzzzz;
+
 // SDRAM controller
 sdram_ctrl_splitcache #(
 	.addr_prefix_bits(addr_prefix_bits),
@@ -223,7 +228,9 @@ sdram_ctrl_splitcache #(
   .sd_ras       (DRAM_RAS_N       ),
   .sd_cas       (DRAM_CAS_N       ),
   .dqm          (sdram_dqm        ),
-  .sdata        (DRAM_DQ          ),
+  .sdata_i      (DRAM_DQ          ),
+  .sdata_o      (sdram_out        ),
+  .sdata_oe     (sdram_oe         ),
   // host
   .hostWR       (bridge_dat_w     ),
   .hostAddr     (bridge_adr       ),
@@ -288,6 +295,12 @@ sdram (
 
 
 `ifdef DUAL_SDRAM
+
+wire sdram2_oe;
+wire [15:0] sdram2_out;
+
+assign DRAM2_DQ = sdram2_oe ? sdram2_out : 16'bzzzzzzzzzzzzzzzz;
+
 // 2nd SDRAM controller
 sdram_ctrl_splitcache #(
 	.addr_prefix_bits(addr_prefix_bits),
@@ -312,7 +325,9 @@ sdram_ctrl_splitcache #(
   .sd_ras       (DRAM2_RAS_N       ),
   .sd_cas       (DRAM2_CAS_N       ),
   .dqm          (sdram2_dqm        ),
-  .sdata        (DRAM2_DQ          ),
+  .sdata_i      (DRAM2_DQ          ),
+  .sdata_o      (sdram2_out        ),
+  .sdata_oe     (sdram2_oe         ),
   // host
   .hostWR       (     ),
   .hostAddr     (     ),

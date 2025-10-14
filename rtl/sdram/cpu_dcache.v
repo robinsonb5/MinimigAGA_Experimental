@@ -512,6 +512,8 @@ end
 
 //// sdram side ////
 
+reg snoop_ack;
+
 // sdram side state machine
 always @ (posedge clk) begin
   if (rst) begin
@@ -521,6 +523,7 @@ always @ (posedge clk) begin
     sdr_sm_dram0_we   <= #1 1'b0;
     sdr_sm_dram1_we   <= #1 1'b0;
     sdr_sm_bs         <= #1 4'b1111;
+    snoop_ack         <= #1 1'b0;
   end else begin
     // default values
     cache_init_done   <= #1 1'b1;
@@ -556,12 +559,13 @@ always @ (posedge clk) begin
         if (cc_clr) begin
           sdr_sm_state <= #1 SDR_SM_INIT0;
         end
-        else if (snoop_act) begin
+        else if (snoop_act != snoop_ack) begin
           // chip write happening
           sdr_sm_state <= #1 SDR_SM_SNOOP;
         end
       end
       SDR_SM_SNOOP : begin
+        snoop_ack <= snoop_act;
         // update if a matching address is in cache
         if (snoop_adr[1]) begin
           sdr_sm_mem_dat_w <= #1 { snoop_dat_w[15:0], snoop_dat_w[15:0] };

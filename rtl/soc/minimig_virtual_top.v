@@ -517,13 +517,19 @@ wire           hostreq;
 wire           hostack;
 wire           hostce;
 
+wire sdram_oe;
+wire [15:0] sdram_out;
+assign SDRAM_DQ = sdram_oe ? sdram_out : 16'bzzzzzzzzzzzzzzzz;
+
 //sdram sdram (
 sdram_ctrl_splitcache sdram (
   .cache_rst    (tg68_rst         ),
   .cache_inhibit(cache_inhibit    ),
   .cacheline_clr(cacheline_clr    ),
   .cpu_cache_ctrl (tg68_CACR_out    ),
-  .sdata        (SDRAM_DQ         ),
+  .sdata_i      (SDRAM_DQ         ),
+  .sdata_o      (sdram_out        ),
+  .sdata_oe     (sdram_oe         ),
   .sdaddr       (SDRAM_A[12:0]    ),
   .dqm          (sdram_dqm        ),
   .sd_cs        (sdram_cs         ),

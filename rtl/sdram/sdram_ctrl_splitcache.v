@@ -40,7 +40,9 @@ module sdram_ctrl_splitcache(
   output wire           sd_ras,
   output wire           sd_cas,
   output reg  [  2-1:0] dqm,
-  inout       [ 16-1:0] sdata,
+  input       [ 16-1:0] sdata_i,
+  output      [ 16-1:0] sdata_o,
+  output reg            sdata_oe,
   // host
   input  wire [ 32-1:0] hostWR,
   input  wire [ 26-1:2] hostAddr,
@@ -157,7 +159,6 @@ reg  [26-1:0] slot2_addr;
 reg  [16-1:0] sdata_reg;
 reg  [16-1:0] sdata_out;
 reg  [16-1:0] sdata_next;
-reg           sdata_oe;
 wire          ccache_fill;
 wire          cpuLongword;
 wire          cpuCSn;
@@ -387,7 +388,7 @@ end
 
 //// read data reg ////
 always @ (posedge sysclk) begin
-	sdata_reg <= #1 sdata;
+	sdata_reg <= #1 sdata_i;
 end
 
 //// write / read control ////
@@ -549,7 +550,7 @@ end
 // 22 downto 10: row
 // 9 downto 1: column
 
-assign sdata = sdata_oe ? sdata_out : 16'bzzzzzzzzzzzzzzzz;
+assign sdata_o = sdata_out;
 
 reg [ 13-1:0] sdaddr_next;
 reg [3:0] sd_cmd_next = CMD_INHIBIT;
@@ -564,6 +565,7 @@ always @ (posedge sysclk) begin
 		sd_cmd_next               <= #1 CMD_INHIBIT;
 		sd_cmd                    <= #1 CMD_INHIBIT;
 		snoop_slot                <= #1 1'b0;
+		snoop_act                   <= #1 1'b0;
 	end
 	sdata_oe                    <= #1 1'b0;
 	sd_cmd_next                 <= #1 CMD_INHIBIT;
@@ -574,7 +576,6 @@ always @ (posedge sysclk) begin
 	dqm                         <= #1 2'b00;
 	cache_fill_1                <= #1 1'b0;
 	cache_fill_2                <= #1 1'b0;
-	snoop_act                   <= #1 1'b0;
 	
 	// Time slot control
 	case(sdram_state)
@@ -754,7 +755,7 @@ always @ (posedge sysclk) begin
 		ph4 : begin
 //			if((slot1_type == CHIP || slot1_type == HOST) && slot1_write) snoop_act <= #1 1'b1;
 			if(slot1_write)
-				snoop_act <= #1 1'b1;
+				snoop_act <= #1 ~snoop_act;
 			cache_fill_2                <= #1 1'b1;
 			if(slot1_type!=IDLE && slot1_type!=REFRESH && !slot1_write) begin // Read cycle
 				ba                  <= #1 slot1_bank;
@@ -965,7 +966,7 @@ always @ (posedge sysclk) begin
 		// slot 2 CAS
 		ph12 : begin
 			if(slot2_write)
-				snoop_act <= #1 1'b1;
+				snoop_act <= #1 ~snoop_act;
 
 				cache_fill_1          <= #1 1'b1;
 			if (slot2_type!=IDLE && !slot2_write) begin // Read cycle
