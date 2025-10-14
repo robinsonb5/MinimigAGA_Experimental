@@ -1021,6 +1021,27 @@ always @ (posedge sysclk) begin
 	endcase
 end
 
+// Verification
+
+`ifdef SOC_VERIFY
+initial cpu_ir <= 1'b0;
+initial cpu_dr <= 1'b0;
+initial cpu_we <= 1'b0;
+initial refresh_pending <= 1'b1;
+initial refreshcnt <= 3;
+initial slot2_bank=2'b11;
+initial icache_slot2ok=1'b0;
+initial dcache_slot2ok=1'b0;
+initial wb_slot2ok=1'b0;
+always @(posedge sysclk) begin
+	assume({cache_req,cpustate[2]}!=2'b11);
+	a_bank: assert(slot1_bank!=slot2_bank || (slot1_type==IDLE || slot2_type==IDLE));
+	a_slot2bank: assert(slot2_bank!=2'b00);
+	a_refresh: assert((refresh_pending & ~(|refreshcnt))==0);
+end
+`endif
+
+
 //// Access slots ////
 
 // We have two slots which can operate concurrently as long as they're accessing

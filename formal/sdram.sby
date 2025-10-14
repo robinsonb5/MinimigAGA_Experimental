@@ -1,0 +1,36 @@
+[tasks]
+basic bmc
+nofullskip prove
+cover
+noverific cover
+basic cover : default
+
+[options]
+cover:
+mode cover
+--
+prove:
+mode prove
+--
+bmc: 
+mode bmc
+depth 20
+--
+
+[engines]
+smtbmc boolector
+
+[script]
+nofullskip: read -define NO_FULL_SKIP=1
+noverific: read -noverific
+read -formal tb.sv dpram_inf_be_1024x32.v dpram_inf_256x32.v cpu_icache.v cpu_dcache.v sdram_ctrl_splitcache.v
+prep -top tb
+
+[files]
+../rtl/sdram/dpram_inf_256x32.v
+../rtl/sdram/dpram_inf_be_1024x32.v
+../rtl/sdram/cpu_icache.v
+../rtl/sdram/cpu_dcache.v
+../rtl/sdram/sdram_ctrl_splitcache.v
+tb.sv
+
