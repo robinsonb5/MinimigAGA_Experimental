@@ -32,10 +32,6 @@ module cpu_icache (
   output reg            sdr_read_req,   // sdram read request from cache
   input  wire           sdr_read_ack,   // sdram read acknowledge to cache
   output reg  [ 26-1:1] sdr_adr,        // sdram address
-  output reg  [ 32-1:0] sdr_dat_w,      // sdram write data
-  output reg  [  4-1:0] sdr_dqm_w,      // sdram write byte selects (active low)
-  output reg            sdr_write_req,  // sdram write request from cache
-  input  wire           sdr_write_ack,  // sdram write acknowledge to cache
   // snoop
   input  wire           snoop_act,      // snoop act (write only - just update existing data in cache)
   input  wire [ 26-1:0] snoop_adr,      // chip address
@@ -196,7 +192,6 @@ assign cpu_ack = cpu_cache_ack;
 always @ (posedge clk) begin
   if (rst) begin
     sdr_read_req      <= #1 1'b0;
-    sdr_write_req     <= #1 1'b0;
     cpu_cache_ack     <= #1 1'b0;
     cpu_sm_state      <= #1 CPU_SM_INIT;
     cpu_sm_dtag_we    <= #1 1'b0;
@@ -204,6 +199,7 @@ always @ (posedge clk) begin
     cpu_sm_dram1_we   <= #1 1'b0;
     cpu_sm_bs         <= #1 4'b1111;
     cpu_adr_blk_ptr   <= #1 3'b000;
+    cpu_dat_r         <= #1 16'h0000;
   end else begin
     // default values
     sdr_read_req      <= #1 1'b0;
@@ -229,69 +225,13 @@ always @ (posedge clk) begin
 
         // waiting for CPU access
         if (cpu_cs && addr_prefix_match) begin
-          if (cpu_we) begin
-
-            cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk_ptr};
-
-            sdr_adr <= #1 cpu_adr[25:1];
-            sdr_dqm_w <= #1 {2'b11, ~cpu_bs};
-            sdr_dat_w <= #1 {cpu_dat_w, cpu_dat_w};
-            if (cpu_32bit) begin
-              cpu_sm_state <= #1 CPU_SM_WAIT_LOWORD;
-            end else begin
-              cpu_sm_state <= #1 CPU_SM_WRITE;
-              cpu_dat_l <= cpu_dat_w;
-              cpu_bs_l <= cpu_bs;
-            end
-          end else if (cpu_rd) begin
+          if (cpu_rd) begin
             cpu_sm_state <= #1 CPU_SM_READ;
           end
         end else begin
           if (cc_clr)
             cpu_sm_state <= #1 CPU_SM_INIT;
         end
-      end
-      CPU_SM_WAIT_LOWORD :
-      if (!cpu_cs) begin
-          cpu_sm_state <= #1 CPU_SM_WRITE_32BIT;
-      end
-      CPU_SM_WRITE_32BIT :
-      if (cpu_cs) begin
-          cpu_adr_l <= cpu_adr;
-          cpu_adr_blk_ptr <= #1 cpu_adr_blk;
-          sdr_dqm_w[3:2] <= #1 ~cpu_bs;
-          sdr_dat_w[31:16] <= #1 cpu_dat_w;
-
-          // on hit update cache, on miss no update neccessary; tags don't get updated on writes
-          if (!cpu_adr_blk[0]) begin
-            // unaligned 32 bit write, hi word
-            cpu_sm_bs <= #1 {~sdr_dqm_w[1:0], 2'b00};
-            cpu_sm_mem_dat_w[31:16] <= #1 sdr_dat_w[15:0];
-            cpu_dat_l <= cpu_dat_w;
-            cpu_bs_l <= cpu_bs;
-            cpu_sm_state <= #1 CPU_SM_WRITE;
-          end else begin
-            // aligned 32 bit write, do it in one step
-            cpu_sm_bs <= #1 {cpu_bs, ~sdr_dqm_w[1:0]};
-            cpu_sm_mem_dat_w <= #1 {cpu_dat_w, sdr_dat_w[15:0]};
-            cpu_adr_blk_ptr <= #1 cpu_adr_blk;
-            sdr_write_req <= !sdr_write_req;
-            cpu_sm_state <= #1 CPU_SM_IDLE;
-          end
-          cpu_sm_dram0_we <= #1 dtag0_match && dtag0_valid /*&& !cc_fr*/;
-          cpu_sm_dram1_we <= #1 dtag1_match && dtag1_valid /*&& !cc_fr*/;
-      end
-      CPU_SM_WRITE : begin
-        // on hit update cache, on miss no update neccessary; tags don't get updated on writes
-        cpu_sm_adr <= #1 {cpu_adr_idx_l, cpu_adr_blk_l};
-        cpu_sm_bs <= #1 cpu_adr_blk_ptr[0] ? {cpu_bs_l, 2'b00} : {2'b00, cpu_bs_l};
-        cpu_sm_mem_dat_w <= #1 { cpu_dat_l, cpu_dat_l };
-        cpu_sm_dram0_we <= #1 dtag0_match && dtag0_valid /*&& !cc_fr*/;
-        cpu_sm_dram1_we <= #1 dtag1_match && dtag1_valid /*&& !cc_fr*/;
-
-        cpu_adr_blk_ptr <= #1 cpu_adr_blk;
-		if(!cpu_cs)
-			cpu_sm_state <= #1 CPU_SM_IDLE;
       end
       CPU_SM_READ : begin
         if(cc_en) begin
@@ -405,12 +345,13 @@ end
 localparam [1:0]
   SDR_SM_INIT0 = 2'd0,
   SDR_SM_INIT1 = 2'd1,
-  SDR_SM_IDLE  = 2'd2,
+  SDR_SM_CPU  = 2'd2,
   SDR_SM_SNOOP = 2'd3;
 
 reg  [ 2-1:0] sdr_sm_state;
 reg  [14-1:0] sdr_sm_tag_adr;
 reg  [10-1:0] sdr_sm_adr;
+wire  [10-1:0] sdr_sm_snoop_write_adr;
 reg           sdr_sm_dtag_we;
 reg           sdr_sm_dram0_we;
 reg           sdr_sm_dram1_we;
@@ -426,6 +367,14 @@ wire          sdr_dtag0_valid;
 wire          sdr_dtag1_valid;
 
 reg snoop_ack;
+reg [25:0] snoop_tag_adr;
+wire snoop_cpuwrite;
+reg snoop_cpuwrite_d;
+reg snoop_cpuwrite_act;
+reg snoop_cpuwrite_act_d;
+
+assign sdr_sm_snoop_write_adr = snoop_tag_adr[11:2];
+assign snoop_cpuwrite = cpu_we & cpu_cs;
 
 // sdram side state machine
 always @ (posedge clk) begin
@@ -437,13 +386,16 @@ always @ (posedge clk) begin
     sdr_sm_dram1_we   <= #1 1'b0;
     sdr_sm_bs         <= #1 4'b1111;
     snoop_ack         <= #1 1'b1;
+	snoop_cpuwrite_act <= #1 1'b0;
   end else begin
     // default values
     cache_init_done   <= #1 1'b1;
     sdr_sm_dtag_we    <= #1 1'b0;
     sdr_sm_dram0_we   <= #1 1'b0;
     sdr_sm_dram1_we   <= #1 1'b0;
-    sdr_sm_bs         <= #1 4'b1111;
+
+	snoop_cpuwrite_act_d <= #1 snoop_cpuwrite_act;
+	snoop_cpuwrite_d <= #1 snoop_cpuwrite;
     // state machine
     case (sdr_sm_state)
       SDR_SM_INIT0 : begin
@@ -460,42 +412,49 @@ always @ (posedge clk) begin
         sdr_sm_adr <= #1 sdr_sm_adr + 10'd4;
         sdr_sm_dtag_we <= #1 1'b1;
         if (&sdr_sm_adr[9:2]) begin
-          sdr_sm_state <= #1 SDR_SM_IDLE;
+          sdr_sm_state <= #1 SDR_SM_CPU;
         end else begin
           sdr_sm_state <= #1 SDR_SM_INIT1;
         end
       end
-      SDR_SM_IDLE : begin
-        // wait for action
+
+      SDR_SM_CPU : begin
         cache_init_done <= #1 1'b1;
-        sdr_sm_adr <= #1 snoop_adr[11:2];
+
+        sdr_sm_adr <= #1 cpu_adr[11:2];
+        if(snoop_cpuwrite_act_d) begin
+		  sdr_sm_state <= #1 SDR_SM_SNOOP;
+          snoop_cpuwrite_act <= 1'b0;          
+	    end
+
         if (cc_clr) begin
           sdr_sm_state <= #1 SDR_SM_INIT0;
         end
-        else if (snoop_act != snoop_ack) begin
-          // chip write happening
-          sdr_sm_state <= #1 SDR_SM_SNOOP;
-        end
+
       end
+
       SDR_SM_SNOOP : begin
-        snoop_ack <= #1 snoop_act;
-        // update if a matching address is in cache
-        if (snoop_adr[1]) begin
-          sdr_sm_mem_dat_w <= #1 { snoop_dat_w[15:0], snoop_dat_w[15:0] };
-          sdr_sm_bs <= #1 { snoop_bs[1:0], 2'b00 };
-        end else begin
-          sdr_sm_mem_dat_w <= #1 snoop_dat_w;
-          sdr_sm_bs <= #1 snoop_bs;
-        end
         sdr_sm_dram0_we <= #1 sdr_dtag0_match && sdr_dtag0_valid;
-        sdr_sm_dram1_we <= #1 sdr_dtag1_match && sdr_dtag1_valid;
-        sdr_sm_state <= #1 SDR_SM_IDLE;
-      end
+        sdr_sm_dram1_we <= #1 sdr_dtag1_match && sdr_dtag1_valid;		
+        sdr_sm_state <= #1 SDR_SM_CPU;
+	  end
+
       default: ;
     endcase
+
+	if(snoop_cpuwrite && !snoop_cpuwrite_d) begin
+	  snoop_cpuwrite_act <= 1'b1;
+      snoop_tag_adr <= #1 cpu_adr[25:0];
+      sdr_sm_mem_dat_w <= #1 { cpu_dat_w[15:0], cpu_dat_w[15:0] };
+      if (cpu_adr[1]) begin
+        sdr_sm_bs <= #1 { cpu_bs[1:0], 2'b00 };
+      end else begin
+        sdr_sm_bs <= #1 {2'b00,cpu_bs};
+      end	
+	end
+	
   end
 end
-
 
 //// data data memories ////
 
@@ -512,8 +471,8 @@ assign dtag1_valid      = dtram_cpu_dat_r[29];
 assign dtram_sdr_adr    = sdr_sm_adr[9:2];
 assign dtram_sdr_we     = sdr_sm_dtag_we;
 assign dtram_sdr_dat_w  = sdr_sm_tag_dat_w;
-assign sdr_dtag0_match  = (snoop_adr[25:12] == dtram_sdr_dat_r[13:0]);
-assign sdr_dtag1_match  = (snoop_adr[25:12] == dtram_sdr_dat_r[27:14]);
+assign sdr_dtag0_match  = (snoop_tag_adr[25:12] == dtram_sdr_dat_r[13:0]);
+assign sdr_dtag1_match  = (snoop_tag_adr[25:12] == dtram_sdr_dat_r[27:14]);
 assign sdr_dtag_hit     = sdr_dtag0_match || sdr_dtag1_match;
 assign sdr_dtag_lru     = dtram_sdr_dat_r[31];
 assign sdr_dtag0_valid  = dtram_sdr_dat_r[30];
@@ -541,7 +500,7 @@ assign ddram0_cpu_adr   = cpu_sm_adr[10:1];
 assign ddram0_cpu_bs    = cpu_sm_bs;
 assign ddram0_cpu_we    = cpu_sm_dram0_we;
 assign ddram0_cpu_dat_w = cpu_sm_mem_dat_w;
-assign ddram0_sdr_adr   = sdr_sm_adr;
+assign ddram0_sdr_adr   = sdr_sm_snoop_write_adr;
 assign ddram0_sdr_bs    = sdr_sm_bs;
 assign ddram0_sdr_we    = sdr_sm_dram0_we;
 assign ddram0_sdr_dat_w = sdr_sm_mem_dat_w;
@@ -570,7 +529,7 @@ assign ddram1_cpu_adr   = cpu_sm_adr[10:1];
 assign ddram1_cpu_bs    = cpu_sm_bs;
 assign ddram1_cpu_we    = cpu_sm_dram1_we;
 assign ddram1_cpu_dat_w = cpu_sm_mem_dat_w;
-assign ddram1_sdr_adr   = sdr_sm_adr;
+assign ddram1_sdr_adr   = sdr_sm_snoop_write_adr;
 assign ddram1_sdr_bs    = sdr_sm_bs;
 assign ddram1_sdr_we    = sdr_sm_dram1_we;
 assign ddram1_sdr_dat_w = sdr_sm_mem_dat_w;

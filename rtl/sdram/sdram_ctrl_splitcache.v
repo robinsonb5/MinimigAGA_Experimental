@@ -148,7 +148,7 @@ localparam CMD_AUTO_REFRESH    = 4'b0001;
 localparam CMD_LOAD_MODE       = 4'b0000;
 
 //// local signals ////
-reg  [ 5-1:0] initstate;
+reg  [ 5-1:0] initstate=0;
 reg  [ 2-1:0] slot1_dqm;
 reg  [ 2-1:0] slot1_dqm2;
 reg  [ 2-1:0] slot2_dqm;
@@ -334,15 +334,59 @@ cpu_icache #(
 	.sdr_read_req     (icache_req),                   // sdram read request from cache
 	.sdr_read_ack     (icache_fill),                  // sdram read acknowledge to cache
 	.sdr_adr          (),
+	.snoop_act        (1'b0),                         // snoop act (write only - just update existing data in cache)
+	.snoop_adr        (snoop_addr),                   // snoop address
+	.snoop_dat_w      (cache_snoop_dat_w),            // snoop write data
+	.snoop_bs         (cache_snoop_bs)
+);
+
+wire [15:0] cpu_rd_i_ref;
+wire ccachehit_i_ref;
+wire icache_req_ref;
+wire dummywrite_ref;
+
+// Reference icache running in lockstep for debugging purposes.
+cpu_icache_ref #(
+	.addr_prefix_bits(addr_prefix_bits),
+	.addr_prefix(addr_prefix)
+) icache_ref (
+	.clk              (sysclk),                       // clock
+	.rst              (!reset || !cache_rst),         // cache reset
+	.cpu_cache_ctrl   (cpu_cache_ctrl),               // CPU cache control
+	.cache_inhibit    (cache_inhibit),                // cache inhibit
+	.cacheline_clr    (cacheline_clr),
+	.cpu_cs           (!cpuCSn),                      // cpu activity
+	.cpu_adr          ({cpuAddr, 1'b0}),              // cpu address
+	.cpu_bs           ({!cpuU, !cpuL}),               // cpu byte selects
+	.cpu_32bit        (longword_en),                  // cpu 32 bit write
+	.cpu_we           (cpu_we),                       // cpu write
+	.cpu_rd           (cpu_ir),                       // cpu instruction read
+	.cpu_dat_w        (cpuWR),                        // cpu write data
+	.cpu_dat_r        (cpu_rd_i_ref),                 // cpu read data
+	.cpu_ack          (ccachehit_i_ref),              // cpu acknowledge
+	.sdr_dat_r        (sdata_reg),                    // sdram read data
+	.sdr_read_req     (icache_req_ref),               // sdram read request from cache
+	.sdr_read_ack     (icache_fill),                  // sdram read acknowledge to cache
+	.sdr_adr          (),
 	.sdr_dat_w        (),
 	.sdr_dqm_w        (),
-	.sdr_write_req    (dummywrite),
-	.sdr_write_ack    (dummywrite),
+	.sdr_write_req    (dummywrite_ref),
+	.sdr_write_ack    (dummywrite_ref),
 	.snoop_act        (snoop_act),                    // snoop act (write only - just update existing data in cache)
 	.snoop_adr        (snoop_addr),                   // snoop address
 	.snoop_dat_w      (cache_snoop_dat_w),            // snoop write data
 	.snoop_bs         (cache_snoop_bs)
 );
+
+reg icache_mismatch /* synthesis noprune */;
+
+always @(posedge sysclk) begin
+	if(ccachehit_i && cpu_rd_i!=cpu_rd_i_ref)
+		icache_mismatch=~icache_mismatch;
+		
+	if(!init_done)
+		icache_mismatch=1'b0;
+end
 
 assign cpuRD = cpu_ir ? cpu_rd_i : cpu_rd_d;
 
@@ -753,8 +797,8 @@ always @ (posedge sysclk) begin
 		end
 
 		ph4 : begin
-//			if((slot1_type == CHIP || slot1_type == HOST) && slot1_write) snoop_act <= #1 1'b1;
-			if(slot1_write)
+			if((slot1_type == CHIP || slot1_type == HOST) && slot1_write)
+//			if(slot1_write)
 				snoop_act <= #1 ~snoop_act;
 			cache_fill_2                <= #1 1'b1;
 			if(slot1_type!=IDLE && slot1_type!=REFRESH && !slot1_write) begin // Read cycle
@@ -965,8 +1009,8 @@ always @ (posedge sysclk) begin
 
 		// slot 2 CAS
 		ph12 : begin
-			if(slot2_write)
-				snoop_act <= #1 ~snoop_act;
+//			if(slot2_write)
+//				snoop_act <= #1 ~snoop_act;
 
 				cache_fill_1          <= #1 1'b1;
 			if (slot2_type!=IDLE && !slot2_write) begin // Read cycle
@@ -1033,11 +1077,13 @@ initial slot2_bank=2'b11;
 initial icache_slot2ok=1'b0;
 initial dcache_slot2ok=1'b0;
 initial wb_slot2ok=1'b0;
+initial init_done=1'b0;
 always @(posedge sysclk) begin
 	assume({cache_req,cpustate[2]}!=2'b11);
 	a_bank: assert(slot1_bank!=slot2_bank || (slot1_type==IDLE || slot2_type==IDLE));
 	a_slot2bank: assert(slot2_bank!=2'b00);
 	a_refresh: assert((refresh_pending & ~(|refreshcnt))==0);
+	a_reficache: assert(cpu_rd_i==cpu_rd_i_ref || ccachehit_i==0 || init_done==0);
 end
 `endif
 

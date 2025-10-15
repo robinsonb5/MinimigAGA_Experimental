@@ -39,11 +39,17 @@ wire clkena;
 assign    clkena = !slower[0] && (cpu_state[1:0] == 2'b01 || (tg68_cpuena & cpu_state[2])) ? 1'b1 : 1'b0;
 
 initial cpu_adr <= 0;
+reg clkena_d=0;
+reg clkena_d2=0;
 
 always @(posedge clk_114) begin
+	clkena_d <= clkena;
+	clkena_d2 <= clkena_d;
+	if(clkena_d2)
+		cpu_adr <= cpuaddr_in;
+
 	if (clkena) begin
 		slower <= 4'b0111;
-		cpu_adr <= cpuaddr_in;
 		cpu_state<={2'b01,cpustate_in};
 	end else
 		slower <= {1'b0, slower[3:1]};
