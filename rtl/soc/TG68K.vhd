@@ -35,7 +35,10 @@ generic
 		havec2p : boolean := true;
 		havecart : boolean := true;
 		dualsdram : boolean := false;
-		useprofiler : boolean := false
+		useprofiler : boolean := false;
+		usebranchcounter : boolean := false;
+		usecpulogger : boolean := false;
+		usebranchtargetbuffer : boolean := false
 	);
 port(
 	clk           : in      std_logic;
@@ -82,8 +85,9 @@ port(
 	cache_inhibit : out     std_logic;
 	cacheline_clr : out     std_logic;
 	--    ovr           : in      std_logic;
-	ramaddr       : out     std_logic_vector(31 downto 0);
-	cpustate      : out     std_logic_vector(3 downto 0);
+	ramaddr       : buffer  std_logic_vector(31 downto 0);
+	ramaddr_i     : out     std_logic_vector(31 downto 0);
+	cpustate      : out     std_logic_vector(4 downto 0);
 --	chipset_ramsel: out     std_logic;
 	nResetOut     : buffer  std_logic;
 	--    cpuDMA        : buffer  std_logic;
@@ -183,22 +187,18 @@ SIGNAL sel_nmi_vector   : std_logic;
 signal block_turbo : std_logic := '0';
 signal throttle_sel : std_logic_vector(1 downto 0);
 
-component profile_cpu
-port (
-	clk : in std_logic;
-	reset_n : in std_logic;
-	clkena : in std_logic;
-	cpustate : in std_logic_vector(1 downto 0);
-	sel_chip : in std_logic;
-	sel_kick : in std_logic;
-	sel_fast24 : in std_logic;
-	sel_fast32: in std_logic
-);
-end component;
+signal btb_ready : std_logic;
+signal btb_addr_ok : std_logic;
+signal newpc : std_logic;
+
+signal freeze_jtag : std_logic;
+signal freeze_cpu : std_logic;
 
 BEGIN
 
-sel_eth<='0';
+	freeze_cpu <= freeze or freeze_jtag;
+
+	sel_eth<='0';
 
 	-- AMR just for convenience / clarity
 	cpu_fetch    <= '1' WHEN state = "00" else '0';
@@ -328,7 +328,7 @@ end generate;
 
   ramcs <= NOT datatg68_selram or slower(0) or block_turbo or sel_nmi_vector or skipfetch; -- (NOT cpu_internal AND sel_ram_d AND NOT sel_nmi_vector) OR slower(0) or block_turbo;
 
-  cpustate <= longword&ramcs&state(1 downto 0);
+  cpustate <= (btb_addr_ok and not ramcs) & longword & ramcs & state(1 downto 0);
   ramlds <= lds_in;
   ramuds <= uds_in;
 
@@ -406,7 +406,7 @@ end generate;
 
   cpu_mode <= cpu(1) & (cpu(1) or cpu(0));
 
-pf68K_Kernel_inst: entity work.TG68KdotC_Kernel
+pf68K_Kernel_inst: entity work.TG68KdotC_Kernel_experimental
   generic map (
     SR_Read         => 2, -- 0=>user,   1=>privileged,    2=>switchable with CPU(0)
     VBR_Stackframe  => 2, -- 0=>no,     1=>yes/extended,  2=>switchable with CPU(0)
@@ -418,7 +418,7 @@ pf68K_Kernel_inst: entity work.TG68KdotC_Kernel
   )
   PORT MAP (
     clk             => clk,           -- : in std_logic;
-    nReset          => reset,         -- : in std_logic:='1';      --low active
+    nReset          => reset and btb_ready,         -- : in std_logic:='1';      --low active
     clkena_in       => clkena,        -- : in std_logic:='1';
     data_in         => datatg68,      -- : in std_logic_vector(15 downto 0);
     IPL             => cpuIPL,        -- : in std_logic_vector(2 downto 0):="111";
@@ -435,7 +435,8 @@ pf68K_Kernel_inst: entity work.TG68KdotC_Kernel
     nResetOut       => nResetOut,
     skipFetch       => skipFetch,     -- : out std_logic
     CACR_out        => CACR,
-    VBR_out         => VBR_out
+    VBR_out         => VBR_out,
+    newpc           => newpc
   );
   CACR_out <= CACR;
 
@@ -555,8 +556,8 @@ begin
 				throttle_sel <= "00";
 			elsif clkena='1' then
 				-- If throttling is enabled, block turbo for CPU data reads, and instruction fetch if cache is disabled.
-				throttle_sel(0) <= freeze or (turbochipram xor turbokick);
-				throttle_sel(1) <= freeze or (turbochipram and not turbokick);
+				throttle_sel(0) <= freeze_cpu or (turbochipram xor turbokick);
+				throttle_sel(1) <= freeze_cpu or (turbochipram and not turbokick);
 			END IF;
 --			sel_chip_d  <= sel_chip;
 			-- All contributing signals are valid 3 clocks after clkena, so valid after clkena+4
@@ -570,7 +571,7 @@ begin
 
 	process (clk) begin
 		if rising_edge(clk) then
-			if (clkena='1' or freeze='1') and cpu_write='0' and block_turbo='0' then
+			if (clkena='1' or freeze_cpu='1') and cpu_write='0' and block_turbo='0' then
 				if throttle_sel(1)='1' or (sel_chip='1' and throttle_sel(0)='1') then
 					throttle<="111";
 				end if;
@@ -728,19 +729,160 @@ begin
 
 end block;
 
+btb : block
+	COMPONENT branch_target_buffer
+		GENERIC ( addr_max_bits : INTEGER := 26; addr_prefix_bits : INTEGER := 1; addr_prefix : INTEGER := 0 ; enable : integer := 1);
+		PORT
+		(
+			clk		:	 IN STD_LOGIC;
+			reset_n		:	 IN STD_LOGIC;
+			cpu_adr		:	 IN STD_LOGIC_VECTOR(addr_max_bits+addr_prefix_bits-1 DOWNTO 0);
+			cpu_state		:	 IN STD_LOGIC_VECTOR(1 DOWNTO 0);
+			cpu_newpc		:	 IN STD_LOGIC;
+			cpu_ack		:	 IN STD_LOGIC;
+			adr_out		:	 OUT STD_LOGIC_VECTOR(26 DOWNTO 0);
+			adr_out_stb		:	 OUT STD_LOGIC;
+			ready		:	 OUT STD_LOGIC
+		);
+	END COMPONENT;
+begin
 
-genprofiler : if useprofiler generate
-	profiler : component profile_cpu
+btb : if usebranchtargetbuffer=true generate
+
+	btb_inst : component branch_target_buffer
+	generic map (
+		enable => 1
+	)
+	port map (
+		clk => clk,
+		reset_n => reset,
+		cpu_adr => ramaddr(26 downto 0),
+		cpu_state => state,
+		cpu_newpc => newpc,
+		cpu_ack => clkena,
+		adr_out => ramaddr_i(26 downto 0),
+		adr_out_stb => btb_addr_ok,
+		ready => btb_ready		
+	);
+	ramaddr_i(31 downto 27) <= (others => '0');
+
+end generate;
+
+nobtb : if usebranchtargetbuffer=false generate
+	-- Just use the BTB unit to generate consectuive addresses.
+	btb_inst : component branch_target_buffer
+	generic map (
+		enable => 0
+	)
+	port map (
+		clk => clk,
+		reset_n => reset,
+		cpu_adr => ramaddr(26 downto 0),
+		cpu_state => state,
+		cpu_newpc => newpc,
+		cpu_ack => clkena,
+		adr_out => ramaddr_i(26 downto 0),
+		adr_out_stb => btb_addr_ok,
+		ready => btb_ready		
+	);
+	ramaddr_i(31 downto 27) <= (others => '0');
+
+end generate;
+
+end block;
+
+profiler : block
+	component profile_cpu
+	port (
+		clk : in std_logic;
+		reset_n : in std_logic;
+		clkena : in std_logic;
+		cpustate : in std_logic_vector(1 downto 0);
+		sel_chip : in std_logic;
+		sel_kick : in std_logic;
+		sel_fast24 : in std_logic;
+		sel_fast32: in std_logic
+	);
+	end component;
+begin
+
+	genprofiler : if useprofiler generate
+		profiler : component profile_cpu
+		port map (
+			clk => clk,
+			reset_n => reset,
+			clkena => clkena,
+			cpustate => state,
+			sel_chip => sel_chip,
+			sel_kick => sel_kick,
+			sel_fast24 => sel_z2ram,
+			sel_fast32 => sel_z3ram
+		);
+	end generate;
+
+end block;
+
+
+branchcounter : block
+	component branchcounter
+	port (
+		clk : in std_logic;
+		reset_n : in std_logic;
+		clkena : in std_logic;
+		cpustate : in std_logic_vector(1 downto 0);
+		addr : in std_logic_vector(31 downto 0);
+		newpc : in std_logic
+	);
+	end component;
+begin
+	gencounter : if usebranchcounter generate
+		branchcounter_inst : component branchcounter
+		port map (
+			clk => clk,
+			reset_n => reset,
+			clkena => clkena,
+			cpustate => state,
+			addr => addrtg68,
+			newpc => newpc
+		);
+	end generate;
+
+end block;
+
+genlogger : if usecpulogger generate
+	loggerblock : block
+		component cpulogger
+		port (
+			clk : in std_logic;
+			reset_n : in std_logic;
+			clkena : in std_logic;
+			cpustate : in std_logic_vector(1 downto 0);
+			addr : in std_logic_vector(27 downto 0);
+			readdata : in std_logic_vector(15 downto 0);
+			writedata : in std_logic_vector(15 downto 0);
+			cacr : in std_logic_vector(3 downto 0);
+			freeze : out std_logic
+		);
+		end component;
+	begin
+	
+	logger : component cpulogger 
 	port map (
 		clk => clk,
 		reset_n => reset,
 		clkena => clkena,
 		cpustate => state,
-		sel_chip => sel_chip,
-		sel_kick => sel_kick,
-		sel_fast24 => sel_z2ram,
-		sel_fast32 => sel_z3ram
+		addr => ramaddr(27 downto 0),
+		readdata => datatg68,
+		writedata => w_datatg68,
+		cacr => CACR,
+		freeze => freeze_jtag
 	);
+	end block;
+end generate;
+
+gennologger : if usecpulogger=false generate
+	freeze_jtag <= '0';
 end generate;
 
 END;

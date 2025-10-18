@@ -18,7 +18,11 @@ package minimig_virtual_pkg is
 	  haveaudio : integer := 1;
 	  havecart : integer := 1;
 	  ram_64meg : integer := 0;
-	  vga_width : integer := 5
+	  vga_width : integer := 5;
+	  useprofiler : integer := 0;
+	  usebranchcounter : integer := 0;
+	  usecpulogger : integer := 0;
+	  usebranchtargetbuffer : integer := 1
 	);
 	PORT
 	(

@@ -196,7 +196,8 @@ generic map
 		haveiec => 1,
 		havereconfig => 0,
 		havecart => 1,
-		vga_width => 4
+		vga_width => 4,
+		usebranchtargetbuffer => 1
 	)
 PORT map
 	(

@@ -1,5 +1,7 @@
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../tg68k/TG68K_Pack.vhd]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../tg68k/TG68KdotC_Kernel.vhd]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) ../tg68k/TG68K_ALU.vhd]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) TG68KdotC_Kernel_experimental.vhd]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) branch_target_buffer.v]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) TG68K.vhd]
 

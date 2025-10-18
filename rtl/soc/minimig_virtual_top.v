@@ -39,7 +39,11 @@ module minimig_virtual_top	#(
 	parameter havespirtc = 0,
 	parameter ram_64meg = 0,
 	parameter vga_width = 6,
-	parameter havecart = 1
+	parameter havecart = 1,
+	parameter usebranchtargetbuffer=0,
+	parameter useprofiler=0,
+	parameter usecpulogger=0,
+	parameter usebranchcounter=0
 )
 (
   // clock inputs
@@ -174,6 +178,7 @@ wire           aga;
 wire           cache_inhibit;
 wire           cacheline_clr;
 wire [ 32-1:0] tg68_cad;
+wire [ 32-1:0] tg68_cad_i;
 wire [  7-1:0] tg68_cpustate;
 wire           tg68_nrst_out;
 //wire           tg68_cdma;
@@ -433,7 +438,11 @@ assign tg68_nrst_out=1'b1;
 TG68K #(.havertg(havertg ? "true" : "false"),
 			.haveaudio(haveaudio ? "true" : "false"),
 			.havec2p(havec2p ? "true" : "false"),
-			.havecart(havecart ? "true" : "false")
+			.havecart(havecart ? "true" : "false"),
+			.useprofiler(useprofiler ? "true" : "false"),
+			.usebranchcounter(usebranchcounter ? "true" : "false"),
+			.usecpulogger(usecpulogger ? "true" : "false"),
+			.usebranchtargetbuffer(usebranchtargetbuffer ? "true" : "false")			
 	) tg68k (
 	.clk          (CLK_114          ),
 	.reset        (tg68_rst         ),
@@ -479,6 +488,7 @@ TG68K #(.havertg(havertg ? "true" : "false"),
 	.frometh      (16'd0),
 	.ethready     (1'b0),
 	.ramaddr      (tg68_cad         ),
+	.ramaddr_i    (tg68_cad_i       ),
 	.cpustate     (tg68_cpustate    ),
 	.nResetOut    (tg68_nrst_out    ),
 	.ramlds       (tg68_clds        ),
@@ -550,6 +560,7 @@ sdram_ctrl_splitcache sdram (
 
   .cpuWR        (tg68_cin         ),
   .cpuAddr      (tg68_cad[25:1]   ),
+  .cpuAddr_i    (tg68_cad_i[25:1] ),
   .cpuU         (tg68_cuds        ),
   .cpuL         (tg68_clds        ),
   .cpustate     (tg68_cpustate    ),

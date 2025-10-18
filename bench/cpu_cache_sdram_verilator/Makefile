@@ -1,7 +1,7 @@
 OBJ_DIR=obj_dir
 VERILATOR_DIR=/usr/share/verilator/include
 HDL_FILES = cpu_cache_sdram_tb.v mt48lc16m16a2.v ../../rtl/sdram/cpu_dcache.v ../../rtl/sdram/cpu_icache.v ../../rtl/sdram/cpu_icache_ref.v ../../rtl/sdram/cpu_cache_new.v \
-	../../rtl/sdram/branch_target_buffer.v ../../rtl/sdram/sdram_ctrl.v ../../rtl/sdram/sdram_ctrl_splitcache.v \
+	../../rtl/soc/branch_target_buffer.v ../../rtl/sdram/sdram_ctrl.v ../../rtl/sdram/sdram_ctrl_splitcache.v \
 	../../rtl/sdram/dpram_inf_256x32.v ../../rtl/sdram/dpram_inf_be_1024x32.v ../../rtl/sdram/dpram_inf_generic.v
 
 all: cpu_cache_sdram_tb

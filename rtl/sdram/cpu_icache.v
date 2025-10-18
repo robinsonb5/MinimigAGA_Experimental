@@ -20,6 +20,8 @@ module cpu_icache (
   // cpu
   input  wire           cpu_cs,         // cpu activity
   input  wire [ addr_max_bits+addr_prefix_bits-1:0] cpu_adr,        // cpu address
+  input  wire           cpu_cs_w,         // cpu activity
+  input  wire [ addr_max_bits+addr_prefix_bits-1:0] cpu_adr_w,        // cpu address
   input  wire [  2-1:0] cpu_bs,         // cpu byte selects
   input  wire           cpu_32bit,      // cpu 32 bit write
   input  wire           cpu_we,         // cpu write
@@ -44,11 +46,15 @@ parameter addr_prefix_bits=1;
 parameter addr_prefix=0;
 
 wire addr_prefix_match;
+wire addr_prefix_match_w;
 generate
-  if(addr_prefix_bits)
+  if(addr_prefix_bits) begin
     assign addr_prefix_match = cpu_adr[addr_max_bits+addr_prefix_bits-1:addr_max_bits]==addr_prefix[addr_prefix_bits-1:0] ? 1'b1 : 1'b0;
-  else 
+    assign addr_prefix_match_w = cpu_adr_w[addr_max_bits+addr_prefix_bits-1:addr_max_bits]==addr_prefix[addr_prefix_bits-1:0] ? 1'b1 : 1'b0;
+  end else begin 
     assign addr_prefix_match = 1'b1;
+    assign addr_prefix_match_w = 1'b1;
+  end
 endgenerate
 
 //// internal signals ////
@@ -75,7 +81,6 @@ reg  [1:0]    cpu_bs_l;
 
 // cpu address
 reg  [addr_max_bits+addr_prefix_bits-1:0] cpu_adr_l;
-reg  [ 3-1:0] cpu_adr_blk_ptr;
 wire [ 3-1:0] cpu_adr_blk;
 wire [ 3-1:0] cpu_adr_blk_l;
 wire [ 8-1:0] cpu_adr_idx;
@@ -116,7 +121,6 @@ wire [32-1:0] dtram_sdr_dat_w;
 wire [32-1:0] dtram_sdr_dat_r;
 wire          dtag0_match;
 wire          dtag1_match;
-wire          dtag_hit;
 wire          dtag_lru;
 wire          dtag0_valid;
 wire          dtag1_valid;
@@ -127,11 +131,13 @@ wire          dtag1_valid;
 localparam [3:0]
   CPU_SM_INIT  = 4'd0,
   CPU_SM_IDLE  = 4'd1,
-  CPU_SM_WAIT_LOWORD = 4'd2,
-  CPU_SM_WRITE_32BIT = 4'd3,
-  CPU_SM_WRITE = 4'd4,
-  CPU_SM_WB    = 4'd5,
-  CPU_SM_READ  = 4'd6,
+  CPU_SM_PAUSE = 4'd2,
+  CPU_SM_PAUSE2 = 4'd3,
+//  CPU_SM_WAIT_LOWORD = 4'd2,
+//  CPU_SM_WRITE_32BIT = 4'd3,
+//  CPU_SM_WRITE = 4'd4,
+//  CPU_SM_WB    = 4'd5,
+//  CPU_SM_READ  = 4'd6,
   CPU_SM_WAIT  = 4'd7,
   CPU_SM_SDWAI = 4'd8,
   CPU_SM_FILL1 = 4'd9,
@@ -185,8 +191,33 @@ assign cpu_adr_blk_l = cpu_adr_l[3:1];    // cache block address (inside cache r
 assign cpu_adr_idx_l = cpu_adr_l[11:4];   // cache row address, 8 bits
 assign cpu_adr_tag_l = cpu_adr_l[25:12];  // tag, 14 bits
 
-assign cpu_ack = cpu_cache_ack;
+wire cpu_req = cpu_cs && addr_prefix_match && cpu_rd && cc_en;
 
+wire dtag0_hit = dtag0_match & dtag0_valid;
+wire dtag1_hit = dtag1_match & dtag1_valid;
+wire dtag_hit = dtag0_hit | dtag1_hit;
+
+wire dtag_ack = (cpu_req && dtag_hit && cpu_sm_state==CPU_SM_IDLE);
+
+always @(*) begin
+  cpu_sm_dtag_we = 1'b0;
+  cpu_sm_tag_dat_w = {1'b0, dtram_cpu_dat_r[30:0]};
+  if (sdr_read_ack && (cpu_sm_state == CPU_SM_FILL1)) begin
+    if (dtag_lru) begin
+      cpu_sm_tag_dat_w = {1'b0, 1'b1, dtram_cpu_dat_r[29], 1'b0, dtram_cpu_dat_r[27:14], cpu_adr_tag_l}; // Removed zero bit
+    end else begin
+      cpu_sm_tag_dat_w = {1'b1, dtram_cpu_dat_r[30], 1'b1, 1'b0, cpu_adr_tag_l, dtram_cpu_dat_r[13: 0]}; // Removed zero bit
+    end
+    cpu_sm_dtag_we = 1'b1;  
+  end else if (cpu_req && dtag0_hit && cpu_sm_state==CPU_SM_IDLE) begin
+    cpu_sm_dtag_we = 1'b1;
+  end else if(cpu_req && dtag1_hit && cpu_sm_state==CPU_SM_IDLE) begin
+    cpu_sm_dtag_we = 1'b1;
+    cpu_sm_tag_dat_w[31] = 1'b1;
+  end
+end
+
+assign cpu_ack = cpu_cache_ack | dtag_ack;
 
 // cpu side state machine
 always @ (posedge clk) begin
@@ -194,19 +225,25 @@ always @ (posedge clk) begin
     sdr_read_req      <= #1 1'b0;
     cpu_cache_ack     <= #1 1'b0;
     cpu_sm_state      <= #1 CPU_SM_INIT;
-    cpu_sm_dtag_we    <= #1 1'b0;
+//    cpu_sm_dtag_we    <= #1 1'b0;
     cpu_sm_dram0_we   <= #1 1'b0;
     cpu_sm_dram1_we   <= #1 1'b0;
     cpu_sm_bs         <= #1 4'b1111;
-    cpu_adr_blk_ptr   <= #1 3'b000;
     cpu_dat_r         <= #1 16'h0000;
   end else begin
     // default values
     sdr_read_req      <= #1 1'b0;
-    cpu_sm_dtag_we    <= #1 1'b0;
+//    cpu_sm_dtag_we    <= #1 1'b0;
     cpu_sm_dram0_we   <= #1 1'b0;
     cpu_sm_dram1_we   <= #1 1'b0;
     cpu_sm_bs         <= #1 4'b1111;
+
+    if(cpu_sm_state==CPU_SM_FILL1)
+       cpu_dat_r <= sdr_dat_r;
+    else if (dtag0_hit) // data is already in data cache way 0
+      cpu_dat_r <= cpu_adr_blk[0] ? ddram0_cpu_dat_r[31:16] : ddram0_cpu_dat_r[15:0];
+	else if (dtag1_hit) // data is already in data cache way 1
+      cpu_dat_r <= cpu_adr_blk[0] ? ddram1_cpu_dat_r[31:16] : ddram1_cpu_dat_r[15:0];
 
     // state machine
     case (cpu_sm_state)
@@ -220,55 +257,84 @@ always @ (posedge clk) begin
       end
       CPU_SM_IDLE : begin
         cpu_adr_l <= cpu_adr;
-        cpu_adr_blk_ptr <= #1 cpu_adr_blk;
         cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
 
         // waiting for CPU access
-        if (cpu_cs && addr_prefix_match) begin
-          if (cpu_rd) begin
-            cpu_sm_state <= #1 CPU_SM_READ;
+        if (cpu_cs && cpu_rd && addr_prefix_match) begin
+          if (cc_en && dtag0_hit) begin
+//            cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
+//            cpu_sm_tag_dat_w <= #1 {1'b0, dtram_cpu_dat_r[30:0]};
+          end else if(cc_en && dtag1_hit) begin
+//            cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
+//            cpu_sm_tag_dat_w <= #1 {1'b0, dtram_cpu_dat_r[30:0]};
+          end else begin
+            // on miss fetch data from SDRAM
+            cpu_acked <= #1 1'b0;
+            if (!sdr_read_ack) begin
+              sdr_read_req <= #1 1'b1;
+              cpu_sm_state <= #1 CPU_SM_FILL1;
+            end else begin
+              // wait if the previous request is still going
+              // (when the cache is inhibited, we don't wait until the burst is finished)
+              cpu_sm_state <= #1 CPU_SM_SDWAI;
+            end
           end
+  
+//          if (cpu_rd && !dtag_hit) begin
+//            cpu_sm_state <= #1 CPU_SM_READ;
+//          end
         end else begin
           if (cc_clr)
             cpu_sm_state <= #1 CPU_SM_INIT;
         end
       end
-      CPU_SM_READ : begin
-        if(cc_en) begin
-          cpu_cache_ack <= #1 1'b1; //early ack
-		  cpu_sm_state <= #1 CPU_SM_WAIT;
-        end
 
-        if (cc_en && dtag0_match && dtag0_valid) begin
-          // data is already in data cache way 0
-          cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
-          cpu_sm_tag_dat_w <= #1 {1'b0, dtram_cpu_dat_r[30:0]};
-          cpu_dat_r <= cpu_adr_blk[0] ? ddram0_cpu_dat_r[31:16] : ddram0_cpu_dat_r[15:0];
-
-        end else if (cc_en && dtag1_match && dtag1_valid) begin
-          // data is already in data cache way 1
-          cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
-          cpu_sm_tag_dat_w <= #1 {1'b1, dtram_cpu_dat_r[30:0]};
-          cpu_dat_r <= cpu_adr_blk[0] ? ddram1_cpu_dat_r[31:16] : ddram1_cpu_dat_r[15:0];
-
-        end else begin
-          // on miss fetch data from SDRAM
-          cpu_cache_ack <= #1 1'b0; //early ack
-          cpu_acked <= #1 1'b0;
-          cpu_adr_blk_ptr <= #1 cpu_adr_blk;
-          if (!sdr_read_ack) begin
-            sdr_read_req <= #1 1'b1;
-            cpu_sm_state <= #1 CPU_SM_FILL1;
-          end else begin
-            // wait if the previous request is still going
-            // (when the cache is inhibited, we don't wait until the burst is finished)
-            cpu_sm_state <= #1 CPU_SM_SDWAI;
-          end
-        end
+      CPU_SM_PAUSE : begin
+        cpu_adr_l <= cpu_adr;
+        cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
+        cpu_sm_state <= CPU_SM_PAUSE2;
       end
 
+      CPU_SM_PAUSE2 : begin
+        cpu_adr_l <= cpu_adr;
+        cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
+        cpu_sm_state <= CPU_SM_IDLE;
+      end
+
+//      CPU_SM_READ : begin
+//        if(cc_en) begin
+//          cpu_cache_ack <= #1 1'b1; //early ack
+//		  cpu_sm_state <= #1 CPU_SM_WAIT;
+//        end
+
+//        if (cc_en && dtag0_match && dtag0_valid) begin
+          // data is already in data cache way 0
+//          cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
+//          cpu_sm_tag_dat_w <= #1 {1'b0, dtram_cpu_dat_r[30:0]};
+//          cpu_dat_r <= cpu_adr_blk[0] ? ddram0_cpu_dat_r[31:16] : ddram0_cpu_dat_r[15:0];
+
+//        end else if (cc_en && dtag1_match && dtag1_valid) begin
+          // data is already in data cache way 1
+//          cpu_sm_dtag_we <= #1 1'b1; // update at the first cycle only
+//          cpu_sm_tag_dat_w <= #1 {1'b1, dtram_cpu_dat_r[30:0]};
+//          cpu_dat_r <= cpu_adr_blk[0] ? ddram1_cpu_dat_r[31:16] : ddram1_cpu_dat_r[15:0];
+
+//        end else begin
+          // on miss fetch data from SDRAM
+//          cpu_cache_ack <= #1 1'b0; //early ack
+//          cpu_acked <= #1 1'b0;
+//          if (!sdr_read_ack) begin
+//            sdr_read_req <= #1 1'b1;
+//            cpu_sm_state <= #1 CPU_SM_FILL1;
+//          end else begin
+            // wait if the previous request is still going
+            // (when the cache is inhibited, we don't wait until the burst is finished)
+//            cpu_sm_state <= #1 CPU_SM_SDWAI;
+//          end
+//        end
+//      end
+
       CPU_SM_WAIT : begin
-        cpu_adr_blk_ptr <= #1 cpu_adr_blk;
         cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
         if (!cpu_cs) cpu_sm_state <= #1 CPU_SM_IDLE;
       end
@@ -278,27 +344,27 @@ always @ (posedge clk) begin
         cpu_sm_state <= #1 CPU_SM_FILL1;
       end
       CPU_SM_FILL1 : begin
-        cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk_ptr};
+        cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
         if (!sdr_read_ack) begin
           sdr_read_req <= #1 1'b1;
         end else begin
           sdr_read_req <= #1 1'b0;
           // read data to cpu
           cpu_cache_ack <= #1 1'b1;
-          cpu_dat_r <= sdr_dat_r;
+//          cpu_dat_r <= sdr_dat_r;
           if (cache_inhibit) begin
             // don't update cache if caching is inhibited
             cpu_sm_state <= #1 CPU_SM_FILLW;
           end else begin      
 
             // update tag ram
-            if (dtag_lru) begin
-              cpu_sm_tag_dat_w <= #1 {1'b0, 1'b1, dtram_cpu_dat_r[29], 1'b0, dtram_cpu_dat_r[27:14], cpu_adr_tag_l}; // Removed zero bit
-            end else begin
-              cpu_sm_tag_dat_w <= #1 {1'b1, dtram_cpu_dat_r[30], 1'b1, 1'b0, cpu_adr_tag_l, dtram_cpu_dat_r[13: 0]}; // Removed zero bit
-            end
+//            if (dtag_lru) begin
+//              cpu_sm_tag_dat_w <= #1 {1'b0, 1'b1, dtram_cpu_dat_r[29], 1'b0, dtram_cpu_dat_r[27:14], cpu_adr_tag_l}; // Removed zero bit
+//            end else begin
+//              cpu_sm_tag_dat_w <= #1 {1'b1, dtram_cpu_dat_r[30], 1'b1, 1'b0, cpu_adr_tag_l, dtram_cpu_dat_r[13: 0]}; // Removed zero bit
+//            end
 
-            cpu_sm_dtag_we <= #1 1'b1;
+//            cpu_sm_dtag_we <= #1 1'b1;
             // cache line fill 1st word
             cpu_sm_dlru <= #1 dtag_lru;
             cpu_sm_bs <= #1 cpu_adr_blk[0] ? 4'b1100 : 4'b0011;
@@ -309,8 +375,9 @@ always @ (posedge clk) begin
           end
         end
       end
-      CPU_SM_FILL2 :
-      if (sdr_read_ack) begin
+      CPU_SM_FILL2 : begin
+        cpu_adr_l <= cpu_adr;
+        if (sdr_read_ack) begin
           if (!cpu_cs)
             cpu_acked <= #1 1'b1;
 
@@ -319,15 +386,15 @@ always @ (posedge clk) begin
           cpu_sm_mem_dat_w <= #1 { sdr_dat_r, sdr_dat_r };
           cpu_sm_dram0_we <= #1  cpu_sm_dlru;
           cpu_sm_dram1_we <= #1 !cpu_sm_dlru;
-      end else if (!cpu_cs | cpu_acked) begin
-          cpu_sm_state <= #1 CPU_SM_IDLE;
-          cpu_adr_blk_ptr <= #1 cpu_adr_blk; // if CS already activated during fill
+        end else if (!cpu_cs | cpu_acked) begin
+          cpu_sm_state <= #1 CPU_SM_PAUSE;
           cpu_sm_adr <= #1 {cpu_adr_idx, cpu_adr_blk};
+        end
       end
+
       CPU_SM_FILLW :
       if (!cpu_cs) begin
         cpu_sm_state <= #1 CPU_SM_IDLE;
-        cpu_adr_blk_ptr <= #1 cpu_adr_blk; // if CS already activated during fill
       end
       default: ;
     endcase
@@ -374,7 +441,7 @@ reg snoop_cpuwrite_act;
 reg snoop_cpuwrite_act_d;
 
 assign sdr_sm_snoop_write_adr = snoop_tag_adr[11:2];
-assign snoop_cpuwrite = cpu_we & cpu_cs;
+assign snoop_cpuwrite = cpu_we & cpu_cs_w;
 
 // sdram side state machine
 always @ (posedge clk) begin
@@ -421,7 +488,7 @@ always @ (posedge clk) begin
       SDR_SM_CPU : begin
         cache_init_done <= #1 1'b1;
 
-        sdr_sm_adr <= #1 cpu_adr[11:2];
+        sdr_sm_adr <= #1 cpu_adr_w[11:2];
         if(snoop_cpuwrite_act_d) begin
 		  sdr_sm_state <= #1 SDR_SM_SNOOP;
           snoop_cpuwrite_act <= 1'b0;          
@@ -442,11 +509,11 @@ always @ (posedge clk) begin
       default: ;
     endcase
 
-	if(snoop_cpuwrite && !snoop_cpuwrite_d) begin
+	if(addr_prefix_match_w && snoop_cpuwrite && !snoop_cpuwrite_d) begin
 	  snoop_cpuwrite_act <= 1'b1;
-      snoop_tag_adr <= #1 cpu_adr[25:0];
+      snoop_tag_adr <= #1 cpu_adr_w[25:0];
       sdr_sm_mem_dat_w <= #1 { cpu_dat_w[15:0], cpu_dat_w[15:0] };
-      if (cpu_adr[1]) begin
+      if (cpu_adr_w[1]) begin
         sdr_sm_bs <= #1 { cpu_bs[1:0], 2'b00 };
       end else begin
         sdr_sm_bs <= #1 {2'b00,cpu_bs};
@@ -464,7 +531,6 @@ assign dtram_cpu_we     = cpu_sm_dtag_we;
 assign dtram_cpu_dat_w  = cpu_sm_tag_dat_w;
 assign dtag0_match      = (cpu_adr_tag_l == dtram_cpu_dat_r[13:0]);
 assign dtag1_match      = (cpu_adr_tag_l == dtram_cpu_dat_r[27:14]);
-assign dtag_hit         = dtag0_match || dtag1_match;
 assign dtag_lru         = dtram_cpu_dat_r[31];
 assign dtag0_valid      = dtram_cpu_dat_r[30];
 assign dtag1_valid      = dtram_cpu_dat_r[29];

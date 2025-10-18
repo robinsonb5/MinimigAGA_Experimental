@@ -83,6 +83,14 @@ set_false_path -to [get_ports {I2S_* SPDIF}]
 
 # multicycle paths
 
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|*} -setup 4
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|*} -hold 3
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|memaddr*} -setup 3
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|memaddr*} -hold 2
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|memaddr*} -to {virtual_top|tg68k|pf68K_Kernel_inst|*} -setup 4
+set_multicycle_path -from {tg68k|pf68K_Kernel_inst|memaddr*} -to {virtual_top|tg68k|pf68K_Kernel_inst|*} -hold 3
+set_multicycle_path -from {tg68k|addr[*]} -setup 3
+set_multicycle_path -from {tg68k|addr[*]} -hold 2
 set_multicycle_path -from {TG68K:tg68k|TG68KdotC_Kernel:pf68K_Kernel_inst|*} -setup 4
 set_multicycle_path -from {TG68K:tg68k|TG68KdotC_Kernel:pf68K_Kernel_inst|*} -hold 3
 set_multicycle_path -from {TG68K:tg68k|TG68KdotC_Kernel:pf68K_Kernel_inst|state*} -setup 3

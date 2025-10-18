@@ -78,7 +78,8 @@ module sdram_ctrl_splitcache(
   output wire    [15:0] audRd,
   // cpu
   input  wire [ addr_max_bits+addr_prefix_bits-1:1] cpuAddr,        // cpu address
-  input  wire     [3:0] cpustate,
+  input  wire [ addr_max_bits+addr_prefix_bits-1:1] cpuAddr_i,      // cpu address
+  input  wire     [4:0] cpustate,
   input  wire           cpuL,
   input  wire           cpuU,
   input  wire [ 16-1:0] cpuWR,
@@ -162,6 +163,7 @@ reg  [16-1:0] sdata_next;
 wire          ccache_fill;
 wire          cpuLongword;
 wire          cpuCSn;
+wire          cpuCSi;
 reg  [ 8-1:0] reset_cnt;
 reg           reset;
 reg           reset_sdstate;
@@ -214,6 +216,7 @@ always @(posedge sysclk) cpuAddr_r <= cpuAddr;
 
 assign cpuLongword = cpustate[3];
 assign cpuCSn      = cpustate[2];
+assign cpuCSi      = cpustate[4];
 
 ////////////////////////////////////////
 // reset
@@ -321,8 +324,10 @@ cpu_icache #(
 	.cpu_cache_ctrl   (cpu_cache_ctrl),               // CPU cache control
 	.cache_inhibit    (cache_inhibit),                // cache inhibit
 	.cacheline_clr    (cacheline_clr),
-	.cpu_cs           (!cpuCSn),                      // cpu activity
-	.cpu_adr          ({cpuAddr, 1'b0}),              // cpu address
+	.cpu_cs           (cpuCSi),                       // cpu activity
+	.cpu_adr          ({cpuAddr_i, 1'b0}),            // cpu address
+	.cpu_cs_w         (!cpuCSn),                      // cpu activity
+	.cpu_adr_w        ({cpuAddr, 1'b0}),              // cpu address
 	.cpu_bs           ({!cpuU, !cpuL}),               // cpu byte selects
 	.cpu_32bit        (longword_en),                  // cpu 32 bit write
 	.cpu_we           (cpu_we),                       // cpu write
@@ -340,53 +345,6 @@ cpu_icache #(
 	.snoop_bs         (cache_snoop_bs)
 );
 
-wire [15:0] cpu_rd_i_ref;
-wire ccachehit_i_ref;
-wire icache_req_ref;
-wire dummywrite_ref;
-
-// Reference icache running in lockstep for debugging purposes.
-cpu_icache_ref #(
-	.addr_prefix_bits(addr_prefix_bits),
-	.addr_prefix(addr_prefix)
-) icache_ref (
-	.clk              (sysclk),                       // clock
-	.rst              (!reset || !cache_rst),         // cache reset
-	.cpu_cache_ctrl   (cpu_cache_ctrl),               // CPU cache control
-	.cache_inhibit    (cache_inhibit),                // cache inhibit
-	.cacheline_clr    (cacheline_clr),
-	.cpu_cs           (!cpuCSn),                      // cpu activity
-	.cpu_adr          ({cpuAddr, 1'b0}),              // cpu address
-	.cpu_bs           ({!cpuU, !cpuL}),               // cpu byte selects
-	.cpu_32bit        (longword_en),                  // cpu 32 bit write
-	.cpu_we           (cpu_we),                       // cpu write
-	.cpu_rd           (cpu_ir),                       // cpu instruction read
-	.cpu_dat_w        (cpuWR),                        // cpu write data
-	.cpu_dat_r        (cpu_rd_i_ref),                 // cpu read data
-	.cpu_ack          (ccachehit_i_ref),              // cpu acknowledge
-	.sdr_dat_r        (sdata_reg),                    // sdram read data
-	.sdr_read_req     (icache_req_ref),               // sdram read request from cache
-	.sdr_read_ack     (icache_fill),                  // sdram read acknowledge to cache
-	.sdr_adr          (),
-	.sdr_dat_w        (),
-	.sdr_dqm_w        (),
-	.sdr_write_req    (dummywrite_ref),
-	.sdr_write_ack    (dummywrite_ref),
-	.snoop_act        (snoop_act),                    // snoop act (write only - just update existing data in cache)
-	.snoop_adr        (snoop_addr),                   // snoop address
-	.snoop_dat_w      (cache_snoop_dat_w),            // snoop write data
-	.snoop_bs         (cache_snoop_bs)
-);
-
-reg icache_mismatch /* synthesis noprune */;
-
-always @(posedge sysclk) begin
-	if(ccachehit_i && cpu_rd_i!=cpu_rd_i_ref)
-		icache_mismatch=~icache_mismatch;
-		
-	if(!init_done)
-		icache_mismatch=1'b0;
-end
 
 assign cpuRD = cpu_ir ? cpu_rd_i : cpu_rd_d;
 

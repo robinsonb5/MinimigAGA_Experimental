@@ -29,6 +29,7 @@ reg [3:0] slower;
 wire      ramsel = cpuState != 2'b01;
 wire      cpu_ncs = ~ramsel | slower[0];
 wire      addriok;
+wire      cpu_csi;
 
 always @(posedge clk_114) begin
 	slower <= {1'b0, slower[3:1]};
@@ -37,7 +38,7 @@ always @(posedge clk_114) begin
 end
 
 assign    clkena = !slower[0] && (cpuState == 2'b01 || tg68_cpuena);
-assign    tg68_cpustate = {cpuLongWord, cpu_ncs, cpuState}; // {addriok,newpc,cpuLongWord, cpu_ncs, cpuState};
+assign    tg68_cpustate = {cpu_csi,cpuLongWord, cpu_ncs, cpuState}; // {addriok,newpc,cpuLongWord, cpu_ncs, cpuState};
 assign    tg68_dat_out = cpuWR;
 assign    cpuRD = tg68_dat_in;
 assign    tg68_cad[addr_max_bits+addr_prefix_bits-1:0] = {cpuAddr,1'b0};
@@ -123,7 +124,7 @@ wire [16-1:0] ramdata_in;
 
 reg  [32-1:0] tg68_cad_i=0;
 reg  [32-1:0] tg68_cad=0;
-reg  [ 4-1:0] tg68_cpustate=4'b0001;
+reg  [ 5-1:0] tg68_cpustate=5'b00001;
 reg           tg68_clds=1;
 reg           tg68_cuds=1;
 wire [16-1:0] tg68_cout;
@@ -147,6 +148,8 @@ reg           tg68_rw=0;
 // Branch target buffer
 
 wire btb_ready;
+
+assign cpu_csi = addriok & ~cpu_ncs;
 
 branch_target_buffer #(.enable(1)) btb (
 	.clk(clk_114),
@@ -267,6 +270,7 @@ sdram_ctrl_splitcache #(
   // cpu
 //  .cpuAddr_i    (tg68_cad_i[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
+  .cpuAddr_i    (tg68_cad_i[addr_max_bits+addr_prefix_bits-1:1] ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),
   .cpuU         (tg68_cuds        ),
@@ -364,6 +368,7 @@ sdram_ctrl_splitcache #(
   // cpu
 //  .cpuAddr_i    (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
+  .cpuAddr_i    (tg68_cad_i[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),
   .cpuU         (tg68_cuds        ),
