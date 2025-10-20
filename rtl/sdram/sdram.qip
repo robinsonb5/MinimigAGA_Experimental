@@ -5,6 +5,7 @@ set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) cpu_dca
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) cpu_icache.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) cpu_icache_ref.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) dpram_inf_256x32.v]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) dpram_inf_unreg_256x32.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) dpram_inf_be_2048x16.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) dpram_inf_be_1024x32.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) dpram_256x32.v]

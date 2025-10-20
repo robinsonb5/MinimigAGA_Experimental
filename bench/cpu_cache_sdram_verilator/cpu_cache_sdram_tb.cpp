@@ -453,16 +453,12 @@ void runtests(int tests) {
 			std::cout << " - BTB test: ERROR" << std::endl;
 	}
 	tests>>=1;
-#if 0
 	if(tests&1) {
-		tests>>=1;
 		if (random_test_128meg(50))
 			std::cout << "Random test 128meg: OK" << std::endl;
 		else
 			std::cout << "Random test 128meg: ERROR" << std::endl;
 	}
-#endif
-
 }
 
 

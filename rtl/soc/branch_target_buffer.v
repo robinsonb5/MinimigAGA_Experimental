@@ -21,18 +21,16 @@
 module branch_target_buffer (
 	input clk,
 	input reset_n,
-    input  wire [ addr_max_bits+addr_prefix_bits-1:0] cpu_adr,        // cpu address
+    input  wire [ addr_bits-1:0] cpu_adr,        // cpu address
 	input [1:0] cpu_state,
 	input cpu_newpc,
 	input cpu_ack,
-	output reg [26:0] adr_out,
+	output reg [addr_bits-1:0] adr_out,
 	output adr_out_stb,
 	output reg ready
 );
 
-parameter addr_max_bits=26;
-parameter addr_prefix_bits=1;
-parameter addr_prefix=0;
+parameter addr_bits=27;
 parameter enable=1;
 
 reg [31:0] tag_storage[256]; 
@@ -67,7 +65,7 @@ reg [31:0] btb_dat_w;
 reg [31:0] btb_tag_w;
 reg btb_we;
 
-wire tag_hit = tag[ addr_max_bits+addr_prefix_bits-1:9] == adr_out[ addr_max_bits+addr_prefix_bits-1:9] ? 1'b1 : 1'b0;
+wire tag_hit = tag[ addr_bits-1:9] == adr_out[ addr_bits-1:9] ? 1'b1 : 1'b0;
 
 // Sequence of events
 // cpu_newpc goes high (this can happen multiple cycles before the next fetch - data cycles and internal cycles can happen while it's high.)
@@ -184,7 +182,7 @@ always @(posedge clk) begin
 			if(newpc_d) begin
 				btb_state <= BTB_LOOKUP;
 				btb_wr_a <= adr_out[8:1];
-				btb_tag_w[ addr_max_bits+addr_prefix_bits-1:0] <= adr_out;
+				btb_tag_w[ addr_bits-1:0] <= adr_out;
 				btb_tag_w[TAG_BIT_VALID]<=1'b1;
 			end
 			
@@ -192,7 +190,7 @@ always @(posedge clk) begin
 		
 		BTB_LOOKUP : begin
 			if(newpc_l || cpu_ack) begin
-				adr_out <= target[addr_max_bits+addr_prefix_bits-1:0]; // Might be too soon...
+				adr_out <= target[addr_bits-1:0]; // Might be too soon...
 				btb_state <= BTB_WAIT_IFETCH;
 			end
 		end
@@ -215,10 +213,10 @@ always @(posedge clk) begin
 		// Check that the CPU did indeed branch to the expected address.
 		BTB_HIT : begin // FIXME - might need one cycle delay here
 			if(fetch_adr_stable) begin
-				if(cpu_adr != adr_out[addr_max_bits+addr_prefix_bits-1:0]) begin
+				if(cpu_adr != adr_out[addr_bits-1:0]) begin
 					adriok<=4'b0001;
 					adr_out <= cpu_adr;
-					btb_dat_w[ addr_max_bits+addr_prefix_bits-1:0] <= cpu_adr;
+					btb_dat_w[ addr_bits-1:0] <= cpu_adr;
 					btb_we <= 1'b1;
 					btb_state <= BTB_WAIT;
 				end else begin
@@ -231,7 +229,7 @@ always @(posedge clk) begin
 		BTB_MISS : begin // FIXME - might need one cycle delay here
 			adr_out <= cpu_adr;
 			adriok<=4'b0001;
-			btb_dat_w[ addr_max_bits+addr_prefix_bits-1:0] <= cpu_adr;
+			btb_dat_w[ addr_bits-1:0] <= cpu_adr;
 			btb_we <= 1'b1;
 			btb_state <= BTB_WAIT;
 		end

@@ -119,11 +119,11 @@ wire [ 8-1:0] dtram_sdr_adr;
 wire          dtram_sdr_we;
 wire [32-1:0] dtram_sdr_dat_w;
 wire [32-1:0] dtram_sdr_dat_r;
-wire          dtag0_match;
-wire          dtag1_match;
-wire          dtag_lru;
-wire          dtag0_valid;
-wire          dtag1_valid;
+reg           dtag0_match;
+reg           dtag1_match;
+reg           dtag_lru;
+reg           dtag0_valid;
+reg           dtag1_valid;
 
 //// params ////
 
@@ -426,12 +426,12 @@ reg  [ 4-1:0] sdr_sm_bs;
 reg  [32-1:0] sdr_sm_mem_dat_w;
 reg  [32-1:0] sdr_sm_tag_dat_w;
 reg           sdr_sm_dlru;
-wire          sdr_dtag0_match;
-wire          sdr_dtag1_match;
+reg           sdr_dtag0_match;
+reg           sdr_dtag1_match;
 wire          sdr_dtag_hit;
-wire          sdr_dtag_lru;
-wire          sdr_dtag0_valid;
-wire          sdr_dtag1_valid;
+reg           sdr_dtag_lru;
+reg           sdr_dtag0_valid;
+reg           sdr_dtag1_valid;
 
 reg snoop_ack;
 reg [25:0] snoop_tag_adr;
@@ -529,26 +529,32 @@ end
 assign dtram_cpu_adr    = cpu_adr_idx;
 assign dtram_cpu_we     = cpu_sm_dtag_we;
 assign dtram_cpu_dat_w  = cpu_sm_tag_dat_w;
-assign dtag0_match      = (cpu_adr_tag_l == dtram_cpu_dat_r[13:0]);
-assign dtag1_match      = (cpu_adr_tag_l == dtram_cpu_dat_r[27:14]);
-assign dtag_lru         = dtram_cpu_dat_r[31];
-assign dtag0_valid      = dtram_cpu_dat_r[30];
-assign dtag1_valid      = dtram_cpu_dat_r[29];
+
+always @(posedge clk) begin
+  dtag0_match      <= (cpu_adr_tag_l == dtram_cpu_dat_r[13:0]);
+  dtag1_match      <= (cpu_adr_tag_l == dtram_cpu_dat_r[27:14]);
+  dtag_lru         <= dtram_cpu_dat_r[31];
+  dtag0_valid      <= dtram_cpu_dat_r[30];
+  dtag1_valid      <= dtram_cpu_dat_r[29];
+end
+
 assign dtram_sdr_adr    = sdr_sm_adr[9:2];
 assign dtram_sdr_we     = sdr_sm_dtag_we;
 assign dtram_sdr_dat_w  = sdr_sm_tag_dat_w;
-assign sdr_dtag0_match  = (snoop_tag_adr[25:12] == dtram_sdr_dat_r[13:0]);
-assign sdr_dtag1_match  = (snoop_tag_adr[25:12] == dtram_sdr_dat_r[27:14]);
+always @(posedge clk) begin
+  sdr_dtag0_match  <= (snoop_tag_adr[25:12] == dtram_sdr_dat_r[13:0]);
+  sdr_dtag1_match  <= (snoop_tag_adr[25:12] == dtram_sdr_dat_r[27:14]);
+  sdr_dtag_lru     <= dtram_sdr_dat_r[31];
+  sdr_dtag0_valid  <= dtram_sdr_dat_r[30];
+  sdr_dtag1_valid  <= dtram_sdr_dat_r[29];
+end
 assign sdr_dtag_hit     = sdr_dtag0_match || sdr_dtag1_match;
-assign sdr_dtag_lru     = dtram_sdr_dat_r[31];
-assign sdr_dtag0_valid  = dtram_sdr_dat_r[30];
-assign sdr_dtag1_valid  = dtram_sdr_dat_r[29];
 
-`ifdef SOC_SIM
-dpram_inf_256x32
-`else
-dpram_256x32
-`endif
+//`ifdef SOC_SIM
+dpram_inf_unreg_256x32
+//`else
+//dpram_256x32
+//`endif
 dtram (
   .clock      (clk              ),
   .address_a  (dtram_cpu_adr    ),

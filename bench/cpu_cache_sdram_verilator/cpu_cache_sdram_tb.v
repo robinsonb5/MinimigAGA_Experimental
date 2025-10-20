@@ -2,6 +2,7 @@
 // based on 2013, rok.krajnc@gmail.com
 
 `define SOC_SIM
+`define DUAL_SDRAM
 
 //// module ////
 module cpu_cache_sdram_tb(
@@ -37,10 +38,10 @@ always @(posedge clk_114) begin
 		slower <= 4'b0111;
 end
 
-assign    clkena = !slower[0] && (cpuState == 2'b01 || tg68_cpuena);
+assign    clkena = !slower[0] && (cpuState == 2'b01 || tg68_cpuena || tg68_cpuena2);
 assign    tg68_cpustate = {cpu_csi,cpuLongWord, cpu_ncs, cpuState}; // {addriok,newpc,cpuLongWord, cpu_ncs, cpuState};
 assign    tg68_dat_out = cpuWR;
-assign    cpuRD = tg68_dat_in;
+assign    cpuRD = tg68_cpuena2 ? tg68_dat_in2 : tg68_dat_in;
 assign    tg68_cad[addr_max_bits+addr_prefix_bits-1:0] = {cpuAddr,1'b0};
 assign    tg68_clds = cpuL;
 assign    tg68_cuds = cpuU;
@@ -122,23 +123,21 @@ wire          _ram_we;
 reg           _ram_oe;
 wire [16-1:0] ramdata_in;
 
-reg  [32-1:0] tg68_cad_i=0;
-reg  [32-1:0] tg68_cad=0;
-reg  [ 5-1:0] tg68_cpustate=5'b00001;
-reg           tg68_clds=1;
-reg           tg68_cuds=1;
+wire [32-1:0] tg68_cad_i;
+wire [32-1:0] tg68_cad;
+wire [ 5-1:0] tg68_cpustate;
+wire          tg68_clds;
+wire          tg68_cuds;
 wire [16-1:0] tg68_cout;
 wire          tg68_ena28;
 wire          tg68_ena7RD;
 wire          tg68_ena7WR;
 wire          tg68_cpuena;
 wire          tg68_cpuena2;
-reg           tg68_dtack=0;
 
-reg  [32-1:0] tg68_adr=0;
-reg  [16-1:0] tg68_dat_in=0;
-reg  [16-1:0] tg68_dat_out=0;
-reg  [16-1:0] tg68_dat_out2=0;
+wire  [16-1:0] tg68_dat_in;
+wire  [16-1:0] tg68_dat_in2;
+wire  [16-1:0] tg68_dat_out;
 reg           tg68_as=0;
 reg           tg68_uds=0;
 reg           tg68_lds=0;
@@ -346,7 +345,7 @@ sdram_ctrl_splitcache #(
   .chipU        (     ),
   .chipL2       (     ),
   .chipU2       (     ),
-  .chipRW       (     ),
+  .chipRW       (1'b1 ),
   .chip_dma     (1'b1 ),
   .chipWR       (     ),
   .chipWR2      (     ),
@@ -366,14 +365,13 @@ sdram_ctrl_splitcache #(
   .audRd        (       ),
   .audack       (       ),
   // cpu
-//  .cpuAddr_i    (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr      (tg68_cad[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpuAddr_i    (tg68_cad_i[addr_max_bits+addr_prefix_bits-1:1]   ),
   .cpustate     (tg68_cpustate    ),
   .cpuL         (tg68_clds        ),
   .cpuU         (tg68_cuds        ),
-  .cpuWR        (tg68_dat_out2    ),
-  .cpuRD        (tg68_dat_in      ),
+  .cpuWR        (tg68_dat_out    ),
+  .cpuRD        (tg68_dat_in2      ),
   .enaWRreg     (tg68_ena28       ),
   .ena7RDreg    (tg68_ena7RD      ),
   .ena7WRreg    (tg68_ena7WR      ),

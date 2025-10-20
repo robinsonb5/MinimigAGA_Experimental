@@ -529,9 +529,9 @@ begin
 --	end process;
 
 --	clkena <= '1' WHEN clkena_pre='1' or (slower(0)='0' and
-	clkena <= '1' WHEN slower(0)='0' and
+	clkena <= '1' WHEN (slower(1)='0' and state="01") or (slower(0)='0' and
 					   ((clkena_in='1' and ((ena7RDreg='1' AND clkena_e='1') OR (ena7WRreg='1' AND clkena_f='1') or fast_rd='1')) OR
-					   cpu_internal='1' or sel_undecoded_d='1' OR akiko_ack='1' or (ramready='1' and block_turbo='0'))
+					   cpu_internal='1' or sel_undecoded_d='1' OR akiko_ack='1' or (ramready='1' and block_turbo='0')))
 				  ELSE '0';
 
 	-- AMR - attempt to imitate A1200 speed more closely on chipram fetches:
@@ -731,12 +731,12 @@ end block;
 
 btb : block
 	COMPONENT branch_target_buffer
-		GENERIC ( addr_max_bits : INTEGER := 26; addr_prefix_bits : INTEGER := 1; addr_prefix : INTEGER := 0 ; enable : integer := 1);
+		GENERIC ( addr_bits : INTEGER := 27; enable : integer := 1);
 		PORT
 		(
 			clk		:	 IN STD_LOGIC;
 			reset_n		:	 IN STD_LOGIC;
-			cpu_adr		:	 IN STD_LOGIC_VECTOR(addr_max_bits+addr_prefix_bits-1 DOWNTO 0);
+			cpu_adr		:	 IN STD_LOGIC_VECTOR(addr_bits-1 DOWNTO 0);
 			cpu_state		:	 IN STD_LOGIC_VECTOR(1 DOWNTO 0);
 			cpu_newpc		:	 IN STD_LOGIC;
 			cpu_ack		:	 IN STD_LOGIC;

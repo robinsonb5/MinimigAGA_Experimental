@@ -622,7 +622,7 @@ sdram_ctrl_splitcache #(.addr_prefix_bits(1), .addr_prefix(0), .fast_write(1)) s
   .cpuRD        (chipram_cout     ),
   .cpuWR        (tg68_cin         ),
   .cpuAddr      (tg68_cad[26:1]   ),
-  .cpuAddr_i    (tg68_cad_i[25:1] ),
+  .cpuAddr_i    (tg68_cad_i[26:1] ),
   .cpuU         (tg68_cuds        ),
   .cpuL         (tg68_clds        ),
   .cpustate     (tg68_cpustate    ),
@@ -669,7 +669,7 @@ wire sdram2_oe;
 wire [15:0] sdram2_out;
 assign SDRAM2_DQ = sdram2_oe ? sdram2_out : 16'bzzzzzzzzzzzzzzzz;
 
-sdram_ctrl #(.shortcut(1'b1), .addr_prefix_bits(1), .addr_prefix(1), .fast_write(1) ) sdram2 (
+sdram_ctrl_splitcache #(.shortcut(1'b1), .addr_prefix_bits(1), .addr_prefix(1), .fast_write(1) ) sdram2 (
   .sysclk       (clk_114          ),
   .reset_in     (sdctl_rst        ),
   .cache_rst    (tg68_rst         ),
@@ -695,7 +695,7 @@ sdram_ctrl #(.shortcut(1'b1), .addr_prefix_bits(1), .addr_prefix(1), .fast_write
   .cpuRD        (fastram_cout     ),
   .cpuWR        (tg68_cin         ),
   .cpuAddr      (tg68_cad[26:1]   ),
-  .cpuAddr_i    (tg68_cad_i[25:1] ),
+  .cpuAddr_i    (tg68_cad_i[26:1] ),
   .cpuU         (tg68_cuds        ),
   .cpuL         (tg68_clds        ),
   .cpustate     (tg68_cpustate    ),
