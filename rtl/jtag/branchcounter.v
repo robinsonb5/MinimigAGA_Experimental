@@ -23,6 +23,8 @@ reg [31:0] linearramcounter;
 reg [31:0] branchcounter;
 reg [31:0] branchramcounter;
 reg [31:0] faultcounter;
+reg [31:0] writecounter;
+reg [31:0] internalcounter;
 
 reg [31:0] addr_next;
 reg newpc_d;
@@ -65,6 +67,14 @@ always @(posedge clk) begin
 		end
 	end
 
+	if(active && (cpustate==2'b11) && clkena) begin
+		writecounter <= writecounter + cyclecounter-4;
+	end
+
+	if(active && (cpustate==2'b01) && clkena) begin
+		internalcounter <= internalcounter + cyclecounter-3;
+	end
+
 	if(clkena)
 		newpc_ce_d <= newpc;
 
@@ -80,6 +90,8 @@ always @(posedge clk) begin
 		linearcounter<= 0;
 		linearramcounter<= 0;
 		faultcounter <= 0;
+		writecounter <= 0;
+		internalcounter <= 0;
 	end
 end
 
@@ -98,6 +110,8 @@ always @(posedge clk) begin
 		3'b011: jtag_d <= branchcounter;
 		3'b100: jtag_d <= branchramcounter;
 		3'b101: jtag_d <= faultcounter;
+		3'b110: jtag_d <= writecounter;
+		3'b111: jtag_d <= internalcounter;
 		default: jtag_d <= totalcounter;
 	endcase
 end

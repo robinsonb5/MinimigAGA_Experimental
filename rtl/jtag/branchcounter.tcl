@@ -120,6 +120,10 @@ proc send_fetch {} {
 	global contramcount
 	global totalcount 
 	global newpcfaultcount
+	global writecount
+	global writepercent
+	global internalcount
+	global internalpercent
 	
 
 	drain_fifo
@@ -134,6 +138,8 @@ proc send_fetch {} {
 			set branchcount [vjtag::recv_blocking]
 			set branchramcount [vjtag::recv_blocking]
 			set newpcfaultcount [vjtag::recv_blocking]
+			set writecount [vjtag::recv_blocking]
+			set internalcount [vjtag::recv_blocking]
 		}
 		vjtag::usbblaster_close
 	}
@@ -146,6 +152,8 @@ proc send_fetch {} {
 	set contrampercent "[expr $contramcount * 100 / $totalcount]%"
 	set branchpercent "[expr $branchcount * 100 / $totalcount]%"
 	set branchrampercent "[expr $branchramcount * 100 / $totalcount]%"
+	set writepercent "[expr $writecount * 100 / $totalcount]%"
+	set internalpercent "[expr $internalcount * 100 / $totalcount]%"
 
 #	send_cmd $CMD_FETCH
 #	send_cmd $CMD_STOP
@@ -186,6 +194,10 @@ set contcount 0
 set contpercent 0
 set contramcount 0
 set contrampercent 0
+set writecount 0
+set writepercent 0
+set internalcount 0
+set internalpercent 0
 set newpcfaultcount 0
 set totalcount 0
 
@@ -222,13 +234,27 @@ grid .newpcfaultlabel -in .frame -row 4 -column 0 -padx 5 -pady 5 -sticky ew
 label .newpcfaultdisp -textvariable newpcfaultcount
 grid .newpcfaultdisp -in .frame -row 4 -column 1 -padx 5 -pady 5 -sticky w
 
-label .writelabel -text "Total Cycles"
+label .writelabel -text "Write"
 grid .writelabel -in .frame -row 5 -column 0 -padx 5 -pady 5 -sticky ew
-label .totaldisp -textvariable totalcount
-grid .totaldisp -in .frame -row 5 -column 1 -padx 5 -pady 5 -sticky w
+label .writedisp -textvariable writecount
+grid .writedisp -in .frame -row 5 -column 1 -padx 5 -pady 5 -sticky w
+label .writepercentdisp -textvariable writepercent
+grid .writepercentdisp -in .frame -row 5 -column 2 -padx 5 -pady 5 -sticky w
 
-grid .btnStart -in .frame -row 6 -column 0 -padx 5 -pady 2 -sticky ew
-grid .btnFetch -in .frame -row 6 -column 1 -padx 5 -pady 2 -sticky ew
+label .internallabel -text "Internal"
+grid .internallabel -in .frame -row 6 -column 0 -padx 5 -pady 5 -sticky ew
+label .internaldisp -textvariable internalcount
+grid .internaldisp -in .frame -row 6 -column 1 -padx 5 -pady 5 -sticky w
+label .internalpercentdisp -textvariable internalpercent
+grid .internalpercentdisp -in .frame -row 6 -column 2 -padx 5 -pady 5 -sticky w
+
+label .totallabel -text "Total Cycles"
+grid .totallabel -in .frame -row 7 -column 0 -padx 5 -pady 5 -sticky ew
+label .totaldisp -textvariable totalcount
+grid .totaldisp -in .frame -row 7 -column 1 -padx 5 -pady 5 -sticky w
+
+grid .btnStart -in .frame -row 8 -column 0 -padx 5 -pady 2 -sticky ew
+grid .btnFetch -in .frame -row 8 -column 1 -padx 5 -pady 2 -sticky ew
 
 update
 
