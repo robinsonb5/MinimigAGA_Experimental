@@ -55,13 +55,13 @@ always @(posedge clk) begin
 
 		totalcounter <= totalcounter+cyclecounter;
 		if(newpc_d) begin
-			if (cyclecounter==6)
-				branchcounter <= branchcounter + 2;
+			if (cyclecounter<8)
+				branchcounter <= branchcounter + cyclecounter - 4;
 			else
 				branchramcounter <= branchramcounter + cyclecounter-4;
 		end else begin
-			if (cyclecounter==6)
-				linearcounter <= linearcounter + 2;
+			if (cyclecounter<8)
+				linearcounter <= linearcounter + cyclecounter - 4;
 			else
 				linearramcounter <= linearramcounter + cyclecounter-4;
 		end

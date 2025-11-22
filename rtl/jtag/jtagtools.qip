@@ -1,0 +1,5 @@
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) chipset_log.v ]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) profile_cpu.v ]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) cpulogger.v ]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) branchcounter.v ]
+
